@@ -19,6 +19,7 @@ import androidx.core.app.NotificationCompat
 import android.os.Build
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
+import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
@@ -26,6 +27,33 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.ToolApprovalState
+import me.rerere.ai.ui.canResumeToolExecution
+import me.rerere.ai.ui.limitContext
+import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
+import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
+import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
+import me.rerere.rikkahub.data.ai.transformers.TimeReminderTransformer
+import me.rerere.rikkahub.data.ai.transformers.PromptInjectionTransformer
+import me.rerere.rikkahub.data.ai.transformers.PlaceholderTransformer
+import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
+import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
+import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
+import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
+import me.rerere.rikkahub.data.ai.transformers.RegexOutputTransformer
+import me.rerere.rikkahub.data.ai.transformers.transforms
+import me.rerere.rikkahub.data.ai.transformers.visualTransforms
+import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
+import me.rerere.rikkahub.data.ai.tools.LocalTools
+import me.rerere.rikkahub.data.ai.tools.SystemTools
+import me.rerere.rikkahub.data.ai.tools.createSearchTools
+import me.rerere.rikkahub.data.ai.tools.createSkillTools
+import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.files.SkillManager
+import me.rerere.rikkahub.plugin.provider.PluginToolProvider
+import me.rerere.rikkahub.data.repository.MemoryRepository
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.data.datastore.ProactiveMessageSetting
 import me.rerere.rikkahub.data.datastore.Settings
@@ -308,11 +336,39 @@ class ProactiveMessageReceiver : BroadcastReceiver() {
 class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
     private val settingsStore: SettingsStore by inject()
     private val conversationRepository: ConversationRepository by inject()
+    private val memoryRepository: MemoryRepository by inject()
     private val providerManager: ProviderManager by inject()
+    private val templateTransformer: TemplateTransformer by inject()
+    private val localTools: LocalTools by inject()
+    private val skillManager: SkillManager by inject()
+    private val mcpManager: McpManager by inject()
+    private val pluginToolProvider: PluginToolProvider by inject()
+    private val json: Json by inject()
     private val proactiveMessageService = ProactiveMessageService()
 
     companion object {
         private const val TAG = "ProactiveMessageTrigger"
+        private const val MAX_TOOL_STEPS = 5 // 主动消息最大工具调用步数
+    }
+
+    // 输入转换器（与 ChatService 保持一致）
+    private val inputTransformers by lazy {
+        listOf(
+            TimeReminderTransformer,
+            PromptInjectionTransformer,
+            PlaceholderTransformer,
+            DocumentAsPromptTransformer,
+            OcrTransformer,
+        )
+    }
+
+    // 输出转换器（与 ChatService 保持一致）
+    private val outputTransformers by lazy {
+        listOf(
+            ThinkTagTransformer,
+            Base64ImageToLocalFileTransformer,
+            RegexOutputTransformer,
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -334,11 +390,6 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     return@launch
                 }
 
-                // 构建上下文
-                val contextStr = proactiveMessageService.buildProactiveContext(
-                    this@ProactiveMessageTriggerService, settings
-                )
-
                 // 获取助手
                 val assistant = settings.assistants.find { it.id.toString() == proactiveSetting.assistantId }
                     ?: settings.getCurrentAssistant()
@@ -352,6 +403,56 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     return@launch
                 }
 
+                // 找到最近的对话
+                val recentConversations = conversationRepository.getRecentConversations(assistantUuid, limit = 1)
+                val conversation = if (recentConversations.isNotEmpty()) {
+                    conversationRepository.getConversationById(recentConversations.first().id)
+                } else null
+
+                val conversationId = conversation?.id ?: kotlin.uuid.Uuid.random()
+
+                // 构建上下文
+                val contextStr = proactiveMessageService.buildProactiveContext(
+                    this@ProactiveMessageTriggerService, settings
+                )
+
+                // 获取历史消息
+                val historyMessages = conversation?.currentMessages?.let {
+                    if (assistant.contextMessageSize > 0) {
+                        it.takeLast(assistant.contextMessageSize)
+                    } else it
+                } ?: emptyList()
+
+                // 构建系统提示词（包含记忆）
+                val systemPrompt = buildSystemPrompt(assistant, settings)
+
+                // 构建用户上下文消息
+                val userMessage = UIMessage(
+                    role = MessageRole.USER,
+                    parts = listOf(UIMessagePart.Text(
+                        contextStr + "\n\n如果你觉得现在没什么好说的，或者没什么有趣的话题，请只回复 [PASS] 即可，不要强行找话题。"
+                    ))
+                )
+
+                // 应用输入转换器
+                val processedUserMessage = listOf(userMessage).transforms(
+                    transformers = inputTransformers + templateTransformer,
+                    context = this@ProactiveMessageTriggerService,
+                    model = model,
+                    assistant = assistant,
+                    settings = settings
+                ).first()
+
+                // 组合完整消息列表：System + History + User Context
+                val messages = buildList {
+                    add(UIMessage(
+                        role = MessageRole.SYSTEM,
+                        parts = listOf(UIMessagePart.Text(systemPrompt))
+                    ))
+                    addAll(historyMessages)
+                    add(processedUserMessage)
+                }
+
                 // 直接调用 AI API 生成消息
                 val providerSetting = model.findProvider(settings.providers)
                 if (providerSetting == null) {
@@ -362,40 +463,63 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 }
 
                 val providerImpl = providerManager.getProviderByType(providerSetting)
-                val systemPrompt = assistant.systemPrompt.ifBlank { "你是一个友好的AI助手。" }
-                val messages = listOf(
-                    UIMessage(
-                        role = MessageRole.SYSTEM,
-                        parts = listOf(UIMessagePart.Text(systemPrompt))
-                    ),
-                    UIMessage(
-                        role = MessageRole.USER,
-                        parts = listOf(UIMessagePart.Text(
-                            contextStr + "\n\n如果你觉得现在没什么好说的，或者没什么有趣的话题，请只回复 [PASS] 即可，不要强行找话题。"
-                        ))
-                    )
-                )
-                // 主动消息场景：不传工具，关闭thinking，只生成纯文本
+
+                // 构建工具列表（与 ChatService 保持一致）
+                val tools = buildTools(settings, assistant, model)
+
+                // 主动消息场景：支持工具调用，但限制最大步数
                 val params = TextGenerationParams(
                     model = model,
-                    temperature = 0.8f,
-                    tools = emptyList(), // 不带工具，避免工具调用
-                    reasoningLevel = ReasoningLevel.OFF, // 关闭思考链
+                    temperature = assistant.temperature ?: 0.8f,
+                    topP = assistant.topP,
+                    maxTokens = assistant.maxTokens,
+                    tools = tools,
+                    reasoningLevel = assistant.reasoningLevel,
+                    customHeaders = buildList {
+                        addAll(assistant.customHeaders)
+                        addAll(model.customHeaders)
+                    },
+                    customBody = buildList {
+                        addAll(assistant.customBodies)
+                        addAll(model.customBodies)
+                    }
                 )
 
-                Log.d(TAG, "Calling AI API for proactive message (no tools, reasoning OFF)...")
-                val result = providerImpl.generateText(providerSetting, messages, params)
-                val replyText = extractCleanReply(result)
+                Log.d(TAG, "Calling AI API for proactive message with ${historyMessages.size} history messages, ${tools.size} tools (reasoning=${assistant.reasoningLevel})...")
+                
+                // 执行生成，支持工具调用
+                val (finalMessages, hasToolCalls) = generateWithTools(
+                    providerImpl = providerImpl,
+                    providerSetting = providerSetting,
+                    initialMessages = messages,
+                    params = params,
+                    tools = tools,
+                    model = model,
+                    assistant = assistant,
+                    settings = settings
+                )
+                
+                // 提取AI消息
+                val aiMessage = finalMessages.lastOrNull() ?: UIMessage(
+                    role = MessageRole.ASSISTANT,
+                    parts = emptyList()
+                )
+                
+                val replyText = aiMessage.parts.filterIsInstance<UIMessagePart.Text>()
+                    .joinToString("\n") { it.text }.trim()
 
-                Log.d(TAG, "Proactive message generated: '${replyText.take(100)}...' (${replyText.length} chars)")
+                Log.d(TAG, "Proactive message generated: '${replyText.take(100)}...' (${replyText.length} chars), hasToolCalls=$hasToolCalls")
 
                 if (replyText.isBlank() || replyText.contains("[PASS]")) {
                     // AI 选择跳过，不发通知
                     Log.d(ProactiveMessageService.TAG, "AI chose to skip proactive message")
                 } else {
-                    // 保存消息到对话并弹窗通知
-                    val conversationId = saveProactiveMessage(settings, assistant, contextStr, replyText)
-                    showProactiveNotification(conversationId, assistant.name.ifBlank { "AI" }, replyText)
+                    // 保存消息到对话并弹窗通知（只保存AI回复，上下文消息作为系统内部信息不显示）
+                    val updatedConversationId = saveProactiveMessage(
+                        settings, assistant, conversationId, conversation, 
+                        aiMessage
+                    )
+                    showProactiveNotification(updatedConversationId, assistant.name.ifBlank { "AI" }, replyText)
                 }
 
                 ProactiveMessageService.scheduleNext(this@ProactiveMessageTriggerService, proactiveSetting)
@@ -409,22 +533,55 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
         return START_NOT_STICKY
     }
 
+    /**
+     * 构建系统提示词，包含记忆等内容
+     */
+    private suspend fun buildSystemPrompt(assistant: Assistant, settings: Settings): String {
+        return buildString {
+            // 基础系统提示词
+            val effectiveSystemPrompt = if (assistant.allowConversationSystemPrompt) {
+                assistant.systemPrompt
+            } else {
+                assistant.systemPrompt
+            }
+            if (effectiveSystemPrompt.isNotBlank()) {
+                append(effectiveSystemPrompt)
+            }
+
+            // 记忆
+            if (assistant.enableMemory) {
+                val memories = if (assistant.useGlobalMemory) {
+                    memoryRepository.getGlobalMemories()
+                } else {
+                    memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
+                }
+                if (memories.isNotEmpty()) {
+                    appendLine()
+                    appendLine()
+                    appendLine("## 记忆")
+                    memories.forEach { memory ->
+                        appendLine("- ${memory.content}")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 保存主动消息到对话历史
+     * 只保存AI回复，上下文消息作为系统内部信息不显示给用户
+     */
     private suspend fun saveProactiveMessage(
         settings: Settings,
         assistant: Assistant,
-        contextStr: String,
-        replyText: String
-    ): kotlin.uuid.Uuid {
+        conversationId: Uuid,
+        existingConversation: Conversation?,
+        aiMessage: UIMessage
+    ): Uuid {
         val assistantUuid = assistant.id
-        // 找到最近的对话，或创建新对话
-        val recentConversations = conversationRepository.getRecentConversations(assistantUuid, limit = 1)
-        val conversation = if (recentConversations.isNotEmpty()) {
-            conversationRepository.getConversationById(recentConversations.first().id)
-        } else null
 
-        val conversationId = conversation?.id ?: kotlin.uuid.Uuid.random()
-        if (conversation == null) {
-            // 创建新对话
+        // 如果对话不存在，创建新对话
+        if (existingConversation == null) {
             val newConversation = Conversation(
                 id = conversationId,
                 assistantId = assistantUuid,
@@ -434,25 +591,25 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
             conversationRepository.insertConversation(newConversation)
         }
 
-        // 添加消息（只保存AI的主动消息，不保存上下文信息到对话历史）
-        val existingConversation = conversationRepository.getConversationById(conversationId)
-        val updatedConversation = (existingConversation ?: Conversation(
-            id = conversationId,
-            assistantId = assistantUuid,
-            title = "",
-            messageNodes = emptyList()
-        )).let { conv ->
-            conv.copy(
-                messageNodes = conv.messageNodes + listOf(
-                    UIMessage(
-                        role = MessageRole.ASSISTANT,
-                        parts = listOf(UIMessagePart.Text(replyText))
-                    ).toMessageNode()
-                ),
-                updateAt = java.time.Instant.now()
+        // 获取最新的对话状态
+        val currentConversation = conversationRepository.getConversationById(conversationId)
+            ?: Conversation(
+                id = conversationId,
+                assistantId = assistantUuid,
+                title = "",
+                messageNodes = emptyList()
             )
-        }
+
+        // 只保存AI回复到对话历史（上下文消息作为系统内部信息不显示）
+        val updatedConversation = currentConversation.copy(
+            messageNodes = currentConversation.messageNodes + listOf(
+                aiMessage.toMessageNode()
+            ),
+            updateAt = java.time.Instant.now()
+        )
+        
         conversationRepository.updateConversation(updatedConversation)
+        Log.d(TAG, "Saved proactive message to conversation $conversationId")
         return conversationId
     }
 
@@ -487,27 +644,203 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
     }
 
     /**
-     * 从AI回复中提取纯文本内容，过滤掉思考链(Reasoning)和工具调用(Tool)等部分
+     * 构建工具列表（与 ChatService 保持一致）
      */
-    private fun extractCleanReply(chunk: MessageChunk): String {
+    private fun buildTools(settings: Settings, assistant: Assistant, model: Model): List<Tool> {
+        return buildList {
+            // 搜索工具
+            if (settings.enableWebSearch) {
+                addAll(createSearchTools(settings))
+            }
+            
+            // 本地工具
+            addAll(localTools.getTools(assistant.localTools))
+            
+            // 系统工具（位置、通知、日历、闹钟、相机）
+            val systemToolsOptions = settings.systemToolsSetting.getEnabledOptions()
+            if (systemToolsOptions.isNotEmpty()) {
+                val systemTools = SystemTools(this@ProactiveMessageTriggerService, settings)
+                addAll(systemTools.getTools(systemToolsOptions))
+            }
+            
+            // Skill 工具
+            if (assistant.enabledSkills.isNotEmpty()) {
+                addAll(
+                    createSkillTools(
+                        enabledSkills = assistant.enabledSkills,
+                        allSkills = skillManager.listSkills(),
+                        skillManager = skillManager,
+                    )
+                )
+            }
+            
+            // MCP 工具
+            mcpManager.getAllAvailableTools().forEach { (serverId, tool) ->
+                add(
+                    Tool(
+                        name = "mcp__" + tool.name,
+                        description = tool.description ?: "",
+                        parameters = { tool.inputSchema },
+                        needsApproval = tool.needsApproval,
+                        execute = {
+                            mcpManager.callTool(serverId, tool.name, it.jsonObject)
+                        },
+                    )
+                )
+            }
+            
+            // 插件工具
+            addAll(pluginToolProvider.getTools())
+        }
+    }
+
+    /**
+     * 生成消息，支持工具调用
+     * 返回最终消息列表和是否发生了工具调用
+     */
+    private suspend fun generateWithTools(
+        providerImpl: me.rerere.ai.provider.Provider<ProviderSetting>,
+        providerSetting: ProviderSetting,
+        initialMessages: List<UIMessage>,
+        params: TextGenerationParams,
+        tools: List<Tool>,
+        model: Model,
+        assistant: Assistant,
+        settings: Settings
+    ): Pair<List<UIMessage>, Boolean> {
+        var messages = initialMessages.toMutableList()
+        var hasToolCalls = false
+        
+        for (step in 0 until MAX_TOOL_STEPS) {
+            Log.d(TAG, "generateWithTools: step $step/${MAX_TOOL_STEPS}")
+            
+            // 调用 AI
+            val result = providerImpl.generateText(providerSetting, messages, params)
+            val aiMessage = result.choices.firstOrNull()?.message
+            
+            if (aiMessage == null) {
+                Log.w(TAG, "No message in AI response")
+                break
+            }
+            
+            // 应用输出转换器
+            val processedMessage = listOf(aiMessage).transforms(
+                transformers = outputTransformers,
+                context = this@ProactiveMessageTriggerService,
+                model = model,
+                assistant = assistant,
+                settings = settings
+            ).first()
+            
+            // 检查是否有工具调用
+            val toolCalls = processedMessage.getTools().filter { !it.isExecuted }
+            
+            if (toolCalls.isEmpty()) {
+                // 没有工具调用，生成完成
+                // 设置 Reasoning 的 finishedAt，否则UI会一直显示"思考中"
+                val now = kotlin.time.Clock.System.now()
+                val finalMessage = processedMessage.copy(
+                    parts = processedMessage.parts.map { part ->
+                        if (part is UIMessagePart.Reasoning && part.finishedAt == null) {
+                            part.copy(finishedAt = now)
+                        } else {
+                            part
+                        }
+                    }
+                )
+                messages.add(finalMessage)
+                break
+            }
+            
+            // 有工具调用
+            hasToolCalls = true
+            Log.d(TAG, "Tool calls detected: ${toolCalls.size}")
+            
+            // 执行工具（后台模式下自动执行，不需要用户审批）
+            val executedTools = mutableListOf<UIMessagePart.Tool>()
+            for (toolCall in toolCalls) {
+                val toolDef = tools.find { it.name == toolCall.toolName }
+                if (toolDef == null) {
+                    Log.w(TAG, "Tool ${toolCall.toolName} not found")
+                    executedTools.add(toolCall.copy(
+                        output = listOf(UIMessagePart.Text("""{"error":"Tool not found"}"""))
+                    ))
+                    continue
+                }
+                
+                // 检查是否需要审批
+                if (toolDef.needsApproval) {
+                    // 后台模式下，需要审批的工具自动拒绝
+                    Log.w(TAG, "Tool ${toolCall.toolName} needs approval, auto-denying in proactive mode")
+                    executedTools.add(toolCall.copy(
+                        output = listOf(UIMessagePart.Text("""{"error":"Tool execution denied: requires user approval in proactive mode"}""")),
+                        approvalState = ToolApprovalState.Denied("Proactive mode: requires approval")
+                    ))
+                } else {
+                    // 执行工具
+                    try {
+                        val args = json.parseToJsonElement(toolCall.input.ifBlank { "{}" })
+                        Log.d(TAG, "Executing tool ${toolDef.name} with args: $args")
+                        val result = toolDef.execute(args)
+                        executedTools.add(toolCall.copy(output = result))
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Tool execution failed: ${toolCall.toolName}", e)
+                        executedTools.add(toolCall.copy(
+                            output = listOf(UIMessagePart.Text("""{"error":"${e.message}"}"""))
+                        ))
+                    }
+                }
+            }
+            
+            // 更新消息中的工具状态
+            val updatedParts = processedMessage.parts.map { part ->
+                if (part is UIMessagePart.Tool) {
+                    executedTools.find { it.toolCallId == part.toolCallId } ?: part
+                } else {
+                    part
+                }
+            }
+            val updatedMessage = processedMessage.copy(parts = updatedParts)
+            messages.add(updatedMessage)
+        }
+        
+        return Pair(messages, hasToolCalls)
+    }
+
+    /**
+     * 从AI回复中提取完整消息和纯文本内容
+     * 返回完整UIMessage（包含思维链）和纯文本内容（用于通知显示）
+     */
+    private fun extractMessageAndText(chunk: MessageChunk): Pair<UIMessage, String> {
         val message = chunk.choices.firstOrNull()?.message
         if (message == null) {
             Log.w(TAG, "No message in AI response chunk")
-            return ""
+            return Pair(
+                UIMessage(
+                    role = MessageRole.ASSISTANT,
+                    parts = emptyList()
+                ),
+                ""
+            )
         }
 
-        // 只保留 Text 类型的 parts，过滤掉 Reasoning、Tool、Image 等
-        val textParts = message.parts.filter { part ->
-            part is UIMessagePart.Text
+        // 提取纯文本内容（用于通知显示）
+        val textParts = message.parts.filterIsInstance<UIMessagePart.Text>()
+        val cleanText = textParts.joinToString("\n") { it.text }.trim()
+
+        // 对于非流式请求，需要手动设置 Reasoning 的 finishedAt，否则UI会一直显示"思考中"
+        val now = kotlin.time.Clock.System.now()
+        val updatedParts = message.parts.map { part ->
+            if (part is UIMessagePart.Reasoning && part.finishedAt == null) {
+                part.copy(finishedAt = now)
+            } else {
+                part
+            }
         }
+        val updatedMessage = message.copy(parts = updatedParts)
 
-        val cleanText = textParts
-            .filterIsInstance<UIMessagePart.Text>()
-            .joinToString("\n") { it.text }
-            .trim()
-
-        Log.d(TAG, "Extracted clean reply: ${cleanText.length} chars (filtered from ${message.parts.size} parts)")
-        return cleanText
+        Log.d(TAG, "Extracted message with ${updatedMessage.parts.size} parts, text: ${cleanText.length} chars")
+        return Pair(updatedMessage, cleanText)
     }
 
     override fun onBind(intent: Intent?): android.os.IBinder? = null

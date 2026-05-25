@@ -224,7 +224,20 @@ class RouteActivity : ComponentActivity() {
         super.onNewIntent(intent)
         // Navigate to the chat screen if a conversation ID is provided
         intent.getStringExtra("conversationId")?.let { text ->
-            navStack?.add(Screen.Chat(text))
+            navStack?.let { stack ->
+                // 检查是否已经在同一个对话页面
+                val existingIndex = stack.indexOfLast { 
+                    it is Screen.Chat && it.id == text 
+                }
+                if (existingIndex >= 0) {
+                    // 已经在同一个对话，移动到栈顶（刷新）
+                    val existing = stack.removeAt(existingIndex)
+                    stack.add(existing)
+                } else {
+                    // 添加新对话页面
+                    stack.add(Screen.Chat(text))
+                }
+            }
         }
     }
 
@@ -496,6 +509,22 @@ class RouteActivity : ComponentActivity() {
                                 SettingProactiveMessagePage()
                             }
 
+                            entry<Screen.SettingPlugins> {
+                                val nav = LocalNavController.current
+                                me.rerere.rikkahub.plugin.ui.PluginManagePage(
+                                    onNavigateToDetail = { pluginId ->
+                                        nav.navigate(Screen.PluginDetail(pluginId))
+                                    }
+                                )
+                            }
+
+                            entry<Screen.PluginDetail> { key ->
+                                me.rerere.rikkahub.plugin.ui.PluginDetailPage(
+                                    pluginId = key.pluginId,
+                                    onNavigateBack = { backStack.removeLastOrNull() }
+                                )
+                            }
+
                         }
                     )
                     AnimatedVisibility(
@@ -670,4 +699,10 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Health : Screen
+
+    @Serializable
+    data object SettingPlugins : Screen
+
+    @Serializable
+    data class PluginDetail(val pluginId: String) : Screen
 }

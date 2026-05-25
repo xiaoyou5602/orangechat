@@ -365,6 +365,10 @@ class GenerationHandler(
                     append(buildRecentChatsPrompt(assistant, conversationRepo))
                 }
 
+                // 代码文件命名和ZIP打包功能说明
+                appendLine()
+                append(buildCodeBlockPrompt())
+
                 // 工具prompt
                 tools.forEach { tool ->
                     appendLine()
@@ -526,4 +530,27 @@ class GenerationHandler(
             }
         }
     }.flowOn(Dispatchers.IO)
+}
+
+/**
+ * 构建代码块提示 - 告知AI代码文件命名和ZIP打包功能
+ */
+private fun buildCodeBlockPrompt(): String = buildString {
+    appendLine("## Code Block Features")
+    appendLine()
+    appendLine("When providing code, you can use the following features:")
+    appendLine()
+    appendLine("1. **Named Code Files**: Include the filename in the code block language tag, e.g.:")
+    appendLine("   ```manifest.json")
+    appendLine("   { \"name\": \"example\" }")
+    appendLine("   ```")
+    appendLine("   ```src/main.kt")
+    appendLine("   fun main() { println(\"Hello\") }")
+    appendLine("   ```")
+    appendLine()
+    appendLine("2. **Multi-file ZIP Download**: When you provide 2+ code blocks in a single response, they will be automatically packaged into a ZIP file for download.")
+    appendLine()
+    appendLine("3. **Custom ZIP Filename**: You can specify the ZIP filename by mentioning it in your message, e.g.:")
+    appendLine("   \"Here is the project code in project.zip\"")
+    appendLine("   \"Download the files as my-app.zip\"")
 }

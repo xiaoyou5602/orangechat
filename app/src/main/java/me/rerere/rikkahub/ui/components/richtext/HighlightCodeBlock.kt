@@ -391,30 +391,33 @@ private fun HighlightCodeActions(
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
                     .onClick {
-                        val extension = when (language.lowercase()) {
-                            "kotlin" -> "kt"
-                            "java" -> "java"
-                            "python" -> "py"
-                            "javascript" -> "js"
-                            "typescript" -> "ts"
-                            "cpp", "c++" -> "cpp"
-                            "c" -> "c"
-                            "html" -> "html"
-                            "css" -> "css"
-                            "xml" -> "xml"
-                            "json" -> "json"
-                            "yaml", "yml" -> "yml"
-                            "markdown", "md" -> "md"
-                            "sql" -> "sql"
-                            "sh", "bash" -> "sh"
-                            "svg" -> "svg"
-                            else -> "txt"
-                        }
-                        createDocumentLauncher.launch(
+                        val fileName = if (language.contains(".")) {
+                            language
+                        } else {
+                            val extension = when (language.lowercase()) {
+                                "kotlin" -> "kt"
+                                "java" -> "java"
+                                "python" -> "py"
+                                "javascript" -> "js"
+                                "typescript" -> "ts"
+                                "cpp", "c++" -> "cpp"
+                                "c" -> "c"
+                                "html" -> "html"
+                                "css" -> "css"
+                                "xml" -> "xml"
+                                "json" -> "json"
+                                "yaml", "yml" -> "yml"
+                                "markdown", "md" -> "md"
+                                "sql" -> "sql"
+                                "sh", "bash" -> "sh"
+                                "svg" -> "svg"
+                                else -> "txt"
+                            }
                             "code_${
                                 Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
                             }.$extension"
-                        )
+                        }
+                        createDocumentLauncher.launch(fileName)
                     }
                     .padding(4.dp)
                     .size(iconSize)
