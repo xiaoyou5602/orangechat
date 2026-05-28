@@ -17,11 +17,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Icon
@@ -56,9 +59,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastAll
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.util.fastForEachIndexed
@@ -609,15 +614,22 @@ private fun MessagePartsBlock(
 }
 
 @Composable
+@Suppress("UnusedCrossTarget")
 internal fun AudioPlayerBubble(url: String) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
-    var durationSec by remember { mutableIntStateOf(0) }
-    var currentSec by remember { mutableIntStateOf(0) }
+    var durationMs by remember { mutableIntStateOf(0) }
+    var currentMs by remember { mutableIntStateOf(0) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var isPrepared by remember { mutableStateOf(false) }
 
-    val barHeights = remember { List(5) { Animatable(0.3f) } }
-    val rnd = remember { kotlin.random.Random(System.currentTimeMillis()) }
+    // Generate pseudo-random waveform bar heights (deterministic per url)
+    val waveformBars = remember(url) {
+        val rnd = java.util.Random(url.hashCode().toLong())
+        List(40) { 0.15f + rnd.nextFloat() * 0.85f }
+    }
+
+    val progress = if (durationMs > 0) currentMs.toFloat() / durationMs else 0f
 
     DisposableEffect(Unit) {
         onDispose {
@@ -626,106 +638,139 @@ internal fun AudioPlayerBubble(url: String) {
         }
     }
 
-    LaunchedEffect(isPlaying) {
-        if (isPlaying) {
-            while (isPlaying) {
-                barHeights.forEachIndexed { i, anim ->
-                    val target = rnd.nextFloat() * 0.7f + 0.3f
-                    anim.animateTo(target, tween(200 + rnd.nextInt(200)))
-                }
-                kotlinx.coroutines.delay(250)
-            }
-        } else {
-            barHeights.forEach { it.snapTo(0.3f) }
-        }
-    }
-
+    // Progress ticker
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
-            mediaPlayer?.let { currentSec = it.currentPosition / 1000 }
-            kotlinx.coroutines.delay(200)
+            mediaPlayer?.let {
+                if (it.isPlaying) {
+                    currentMs = it.currentPosition
+                }
+            }
+            kotlinx.coroutines.delay(50)
         }
     }
 
-    Surface(
-        tonalElevation = 2.dp,
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.secondaryContainer
+    // Animate waveform bars when playing
+    val animatedBars = remember { mutableStateOf(waveformBars) }
+    LaunchedEffect(isPlaying, progress) {
+        if (isPlaying) {
+            val rnd = java.util.Random()
+            val newBars = waveformBars.mapIndexed { index, base ->
+                val playedRatio = if (progress > 0f) index.toFloat() / waveformBars.size else 0f
+                if (playedRatio <= progress) {
+                    // Already played bars stay at original height
+                    base
+                } else {
+                    // Upcoming bars get slight animation
+                    base * (0.85f + rnd.nextFloat() * 0.3f)
+                }
+            }
+            animatedBars.value = newBars
+        } else {
+            animatedBars.value = waveformBars
+        }
+    }
+
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .padding(start = 4.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        // Play / Pause button
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+                .clickable {
+                    if (isPlaying) {
+                        mediaPlayer?.pause()
+                        isPlaying = false
+                    } else {
+                        if (mediaPlayer == null || !isPrepared) {
+                            val mp = MediaPlayer()
+                            try {
+                                val uri = android.net.Uri.parse(url)
+                                mp.setDataSource(context, uri)
+                                mp.prepare()
+                                durationMs = mp.duration
+                                mp.setOnCompletionListener {
+                                    isPlaying = false
+                                    currentMs = 0
+                                }
+                                mp.start()
+                                isPlaying = true
+                                isPrepared = true
+                                mediaPlayer = mp
+                            } catch (e: Exception) {
+                                mp.release()
+                            }
+                        } else {
+                            mediaPlayer?.start()
+                            isPlaying = true
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = if (isPlaying) HugeIcons.PauseCircle else HugeIcons.PlayCircle,
                 contentDescription = if (isPlaying) "Pause" else "Play",
-                modifier = Modifier
-                    .size(24.dp)
-                    .clip(RoundedCornerShape(50))
-                    .clickable {
-                        if (isPlaying) {
-                            mediaPlayer?.pause()
-                            isPlaying = false
-                        } else {
-                            if (mediaPlayer == null) {
-                                val mp = MediaPlayer()
-                                try {
-                                    val uri = android.net.Uri.parse(url)
-                                    mp.setDataSource(context, uri)
-                                    mp.prepare()
-                                    mp.setOnPreparedListener {
-                                        durationSec = it.duration / 1000
-                                        it.start()
-                                        isPlaying = true
-                                    }
-                                    mp.setOnCompletionListener {
-                                        isPlaying = false
-                                        currentSec = 0
-                                    }
-                                    mediaPlayer = mp
-                                } catch (e: Exception) {
-                                    mp.release()
-                                }
-                            } else {
-                                mediaPlayer?.start()
-                                isPlaying = true
-                            }
-                        }
-                    }
-            )
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                barHeights.forEach { animatable ->
-                    val height by animatable.asState()
-                    Canvas(modifier = Modifier.size(width = 3.dp, height = 16.dp)) {
-                        drawRoundRect(
-                            color = Color(0xFF7C4DFF),
-                            topLeft = androidx.compose.ui.geometry.Offset(
-                                0f, size.height * (1f - height) / 2f
-                            ),
-                            size = androidx.compose.ui.geometry.Size(size.width, size.height * height)
-                        )
-                    }
-                }
-            }
-
-            Text(
-                text = if (isPlaying || currentSec > 0) {
-                    String.format("%d:%02d", currentSec / 60, currentSec % 60)
-                } else if (durationSec > 0) {
-                    String.format("%d:%02d", durationSec / 60, durationSec % 60)
-                } else {
-                    "0:00"
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.padding(start = 4.dp, end = 4.dp)
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(22.dp)
             )
         }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Waveform bars
+        Canvas(
+            modifier = Modifier
+                .weight(1f)
+                .height(28.dp)
+                .clickable { /* click waveform to seek (optional future) */ }
+        ) {
+            val barCount = animatedBars.value.size
+            val totalWidth = size.width
+            val barWidth = 2.5f
+            val gap = (totalWidth - barWidth * barCount) / (barCount - 1).coerceAtLeast(1)
+            val playedBarCount = (progress * barCount).toInt()
+
+            animatedBars.value.forEachIndexed { index, barRatio ->
+                val barHeight = size.height * barRatio.coerceIn(0.15f, 1f)
+                val x = index * (barWidth + gap)
+                val y = (size.height - barHeight) / 2f
+                drawRoundRect(
+                    color = if (index < playedBarCount) activeColor else inactiveColor,
+                    topLeft = androidx.compose.ui.geometry.Offset(x, y),
+                    size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5f, 1.5f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(6.dp))
+
+        // Duration text
+        val displaySec = if (isPlaying || currentMs > 0) {
+            val remaining = (durationMs - currentMs) / 1000
+            remaining.coerceAtLeast(0)
+        } else {
+            durationMs / 1000
+        }
+        Text(
+            text = String.format("%d:%02d", displaySec / 60, displaySec % 60),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            fontSize = 13.sp,
+            modifier = Modifier.width(36.dp),
+            textAlign = TextAlign.End
+        )
     }
 }
 

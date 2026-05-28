@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.plugin.di
 
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.service.MemoryBankService
 import me.rerere.rikkahub.plugin.loader.PluginLoader
 import me.rerere.rikkahub.plugin.manager.PluginManager
@@ -22,8 +23,8 @@ val pluginModule = module {
     // Repository
     single { PluginRepository(androidContext()) }
     
-    // Loader - 需要OkHttpClient和MemoryBankService
-    single { PluginLoader(androidContext(), get<OkHttpClient>(), get<MemoryBankService>()) }
+    // Loader - 需要OkHttpClient、MemoryBankService和SettingsStore
+    single { PluginLoader(androidContext(), get<OkHttpClient>(), get<MemoryBankService>(), get<SettingsStore>()) }
     
     // Manager
     single { PluginManager(androidContext(), get(), get(), get()) }

@@ -10,6 +10,7 @@ import me.rerere.hugeicons.stroke.Mic01
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.VolumeHigh
+import me.rerere.hugeicons.stroke.MusicNote03
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
@@ -38,8 +40,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -104,7 +108,7 @@ fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
                                 )
                             )
                         }
-                    } else {
+                    } else if (selectedPage == 1) {
                         AddASRProviderButton {
                             vm.updateSettings(
                                 settings.copy(
@@ -152,6 +156,7 @@ fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
                 onEdit = { editingASRProvider = it },
                 modifier = Modifier.padding(innerPadding)
             )
+
         }
     }
 

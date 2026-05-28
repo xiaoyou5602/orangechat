@@ -3,6 +3,10 @@ package me.rerere.rikkahub.ui.components.message
 import android.util.Log
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,6 +21,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -35,10 +41,12 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +55,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -85,6 +94,8 @@ import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.Time02
 import me.rerere.hugeicons.stroke.FileDownload
+import me.rerere.hugeicons.stroke.Pause
+import me.rerere.hugeicons.stroke.Play
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.hugeicons.stroke.VolumeHigh
 import me.rerere.hugeicons.stroke.Zip02
@@ -101,7 +112,10 @@ import me.rerere.rikkahub.ui.components.ui.DotLoading
 import me.rerere.rikkahub.ui.components.ui.Favicon
 import me.rerere.rikkahub.ui.components.ui.FaviconRow
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.context.LocalTTSState
+import me.rerere.rikkahub.ui.hooks.CustomTtsState
 import me.rerere.rikkahub.ui.modifier.shimmer
+import me.rerere.tts.model.PlaybackStatus
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.JsonInstantPretty
 import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
@@ -369,30 +383,10 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
                     }
                     if (tool.toolName == ToolNames.TTS) {
                         val text = arguments.getStringContent("text") ?: ""
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                text = text,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-                            FilledTonalIconButton(
-                                onClick = { scope.launch { eventBus.emit(AppEvent.Speak(text)) } },
-                                modifier = Modifier.size(28.dp),
-                            ) {
-                                Icon(
-                                    imageVector = HugeIcons.Refresh01,
-                                    contentDescription = "Replay",
-                                    modifier = Modifier.size(14.dp),
-                                )
-                            }
-                        }
+                        TtsVoiceBar(
+                            text = text,
+                            onReplay = { scope.launch { eventBus.emit(AppEvent.Speak(text)) } }
+                        )
                     }
                     if ((tool.toolName == ToolNames.ZIP_FILES || tool.toolName == ToolNames.WRITE_FILES) && tool.isExecuted && content != null) {
                         val context = LocalContext.current
@@ -1038,6 +1032,102 @@ private data class AskUserQuestion(
     val options: List<String>,
     val selectionType: String = "text", // "text" | "single" | "multi"
 )
+
+@Composable
+private fun TtsVoiceBar(
+    text: String,
+    onReplay: () -> Unit
+) {
+    val ttsState = LocalTTSState.current
+    val playbackState by ttsState.playbackState.collectAsState()
+    val isSpeaking by ttsState.isSpeaking.collectAsState()
+
+    val progress = if (playbackState.durationMs > 0) {
+        playbackState.positionMs.toFloat() / playbackState.durationMs
+    } else 0f
+
+    val waveformBars = remember(text) {
+        val rnd = java.util.Random(text.hashCode().toLong())
+        List(24) { 0.2f + rnd.nextFloat() * 0.8f }
+    }
+
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
+
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f))
+            .padding(horizontal = 3.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Play / Pause button
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+                .clickable {
+                    when (playbackState.status) {
+                        PlaybackStatus.Playing -> ttsState.pause()
+                        else -> if (isSpeaking) ttsState.resume() else onReplay()
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (playbackState.status == PlaybackStatus.Playing) HugeIcons.Pause else HugeIcons.Play,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(12.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(4.dp))
+
+        // Waveform
+        Canvas(
+            modifier = Modifier
+                .weight(1f)
+                .height(18.dp)
+        ) {
+            val barCount = waveformBars.size
+            val totalWidth = size.width
+            val barWidth = 2f
+            val gap = (totalWidth - barWidth * barCount) / (barCount - 1).coerceAtLeast(1)
+            val playedBarCount = (progress * barCount).toInt()
+
+            waveformBars.forEachIndexed { index, barRatio ->
+                val barHeight = size.height * barRatio.coerceIn(0.2f, 1f)
+                val x = index * (barWidth + gap)
+                val y = (size.height - barHeight) / 2f
+                drawRoundRect(
+                    color = if (index < playedBarCount) activeColor else inactiveColor,
+                    topLeft = androidx.compose.ui.geometry.Offset(x, y),
+                    size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(1f, 1f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(4.dp))
+
+        // Duration
+        val remainingSec = if (isSpeaking && playbackState.durationMs > 0) {
+            ((playbackState.durationMs - playbackState.positionMs) / 1000).toInt().coerceAtLeast(0)
+        } else {
+            text.length / 5
+        }
+        Text(
+            text = String.format("%d:%02d", remainingSec / 60, remainingSec % 60),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            fontSize = 10.sp,
+            modifier = Modifier.width(28.dp),
+            textAlign = TextAlign.End
+        )
+    }
+}
 
 @Composable
 private fun ToolDenyReasonDialog(

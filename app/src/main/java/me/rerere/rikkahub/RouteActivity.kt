@@ -66,7 +66,6 @@ import me.rerere.rikkahub.data.db.MigrationState
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.ui.activity.SafeModeActivity
-import me.rerere.rikkahub.ui.components.ui.TTSController
 import me.rerere.rikkahub.ui.context.LocalASRState
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
@@ -298,7 +297,6 @@ class RouteActivity : ComponentActivity() {
                     alignment = Alignment.TopCenter,
                     showCloseButton = true,
                 )
-                TTSController()
                 Box(
                     modifier = Modifier
                         .fillMaxSize()

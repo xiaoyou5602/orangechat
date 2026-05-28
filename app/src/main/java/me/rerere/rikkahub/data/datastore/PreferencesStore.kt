@@ -152,6 +152,7 @@ class SettingsStore(
 
         // 主动消息设置
         val PROACTIVE_MESSAGE_SETTING = stringPreferencesKey("proactive_message_setting")
+
     }
 
     private val dataStore = context.settingsStore

@@ -15,7 +15,8 @@ const CONFIG = {
   phaseSummaryThreshold: 50,
   enableDailyJournal: true,
   enableVectorization: false,
-  maxRetryCount: 3
+  maxRetryCount: 3,
+  targetAssistantIds: [] // 留空则对所有助手生效
 };
 
 // 本地状态
@@ -37,16 +38,35 @@ function isConfigEnabled(value) {
 function initConfig() {
   CONFIG.supabaseUrl = config.supabase_url || '';
   CONFIG.supabaseKey = config.supabase_key || '';
-  CONFIG.summaryBaseUrl = config.summary_base_url || 'https://api.openai.com/v1';
-  CONFIG.summaryApiKey = config.summary_api_key || '';
+  // summary_model 已由 PluginLoader 解析为实际 modelId（如 "gpt-4o-mini"）
+  // summary_model_base_url 和 summary_model_api_key 由 PluginLoader 自动注入
+  CONFIG.summaryBaseUrl = config.summary_model_base_url || 'https://api.openai.com/v1';
+  CONFIG.summaryApiKey = config.summary_model_api_key || '';
   CONFIG.summaryModel = config.summary_model || 'gpt-4o-mini';
-  CONFIG.embeddingBaseUrl = config.embedding_base_url || CONFIG.summaryBaseUrl;
-  CONFIG.embeddingApiKey = config.embedding_api_key || CONFIG.summaryApiKey;
+  // embedding_model 同理
+  CONFIG.embeddingBaseUrl = config.embedding_model_base_url || CONFIG.summaryBaseUrl;
+  CONFIG.embeddingApiKey = config.embedding_model_api_key || CONFIG.summaryApiKey;
   CONFIG.embeddingModel = config.embedding_model || 'text-embedding-3-small';
   CONFIG.phaseSummaryThreshold = config.phase_summary_threshold || 50;
   CONFIG.enableDailyJournal = isConfigEnabled(config.enable_daily_journal);
   CONFIG.enableVectorization = isConfigEnabled(config.enable_vectorization);
   CONFIG.maxRetryCount = config.max_retry_count || 3;
+
+  // 解析目标助手ID列表
+  const targetIdsStr = (config.target_assistant_ids || '').trim();
+  if (targetIdsStr) {
+    CONFIG.targetAssistantIds = targetIdsStr.split(',').map(id => id.trim()).filter(id => id.length > 0);
+  } else {
+    CONFIG.targetAssistantIds = []; // 空列表表示对所有助手生效
+  }
+}
+
+// 检查助手是否在允许列表中
+function isAssistantAllowed(assistantId) {
+  if (!assistantId) return true;
+  // 空列表表示对所有助手生效
+  if (CONFIG.targetAssistantIds.length === 0) return true;
+  return CONFIG.targetAssistantIds.includes(assistantId);
 }
 
 // Supabase REST API 请求
@@ -308,6 +328,18 @@ ${messageText}
   return journal;
 }
 
+// 检查并触发阶段总结（在 onMessageSent 和 onMessageReceived 中共用）
+async function checkAndTriggerPhaseSummary(conversationId, assistantId) {
+  try {
+    const count = await getMessageCount(conversationId);
+    if (count > 0 && count % CONFIG.phaseSummaryThreshold === 0) {
+      await triggerPhaseSummary(conversationId, assistantId);
+    }
+  } catch (error) {
+    console.error('Failed to check phase summary trigger:', error);
+  }
+}
+
 // ==================== 事件处理 ====================
 
 // 消息发送时
@@ -318,8 +350,15 @@ async function onMessageSent(event) {
     return;
   }
 
+  const assistantId = event.assistant_id;
+
+  // 检查助手是否在允许列表中
+  if (!isAssistantAllowed(assistantId)) {
+    return;
+  }
+
   const message = {
-    assistantId: event.assistant_id,
+    assistantId: assistantId,
     conversationId: event.conversation_id,
     role: 'user',
     content: event.message,
@@ -330,11 +369,7 @@ async function onMessageSent(event) {
     await saveMessageToSupabase(message);
     
     // 检查是否需要触发阶段总结
-    const count = getMessageCount(event.conversation_id);
-    if (count % CONFIG.phaseSummaryThreshold === 0 && count > 0) {
-      // 直接调用（QuickJS沙箱中setTimeout不可靠）
-      triggerPhaseSummary(event.conversation_id, event.assistant_id);
-    }
+    await checkAndTriggerPhaseSummary(event.conversation_id, assistantId);
   } catch (error) {
     console.error('Failed to sync message:', error);
   }
@@ -348,8 +383,15 @@ async function onMessageReceived(event) {
     return;
   }
 
+  const assistantId = event.assistant_id;
+
+  // 检查助手是否在允许列表中
+  if (!isAssistantAllowed(assistantId)) {
+    return;
+  }
+
   const message = {
-    assistantId: event.assistant_id,
+    assistantId: assistantId,
     conversationId: event.conversation_id,
     role: 'assistant',
     content: event.message,
@@ -358,6 +400,9 @@ async function onMessageReceived(event) {
 
   try {
     await saveMessageToSupabase(message);
+    
+    // 在收到AI回复后也检查阶段总结（修复总结不触发的问题）
+    await checkAndTriggerPhaseSummary(event.conversation_id, assistantId);
   } catch (error) {
     console.error('Failed to sync message:', error);
   }
@@ -419,6 +464,9 @@ async function onDailyCron(event) {
     // 按 assistant 分组
     const messagesByAssistant = {};
     result.forEach(m => {
+      // 如果配置了目标助手，只处理允许的助手
+      if (!isAssistantAllowed(m.assistant_id)) return;
+
       if (!messagesByAssistant[m.assistant_id]) {
         messagesByAssistant[m.assistant_id] = [];
       }
@@ -579,6 +627,9 @@ async function memory_manual_journal(params) {
 
     const messagesByAssistant = {};
     result.forEach(m => {
+      // 如果配置了目标助手，只处理允许的助手
+      if (!isAssistantAllowed(m.assistant_id)) return;
+
       if (!messagesByAssistant[m.assistant_id]) {
         messagesByAssistant[m.assistant_id] = [];
       }

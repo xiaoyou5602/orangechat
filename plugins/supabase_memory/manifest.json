@@ -75,6 +75,14 @@
       "default": 3,
       "min": 1,
       "max": 10
+    },
+    {
+      "name": "target_assistant_ids",
+      "type": "string",
+      "label": "目标助手ID",
+      "description": "只处理指定助手的消息，多个用逗号分隔。留空则对所有助手生效。可在助手的设置页面查看助手ID",
+      "required": false,
+      "placeholder": "留空对所有助手生效，或填写如：abc123,def456"
     }
   ],
   "hooks": [

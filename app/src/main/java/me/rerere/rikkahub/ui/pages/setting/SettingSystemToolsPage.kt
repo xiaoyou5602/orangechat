@@ -38,7 +38,7 @@ import me.rerere.hugeicons.stroke.Notification02
 import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.hugeicons.stroke.BatteryFull
 import me.rerere.hugeicons.stroke.MusicNote03
-import me.rerere.hugeicons.stroke.Speaker01
+import me.rerere.hugeicons.stroke.MusicNote02
 import me.rerere.hugeicons.stroke.Watch01
 import me.rerere.rikkahub.data.ai.tools.SystemTools
 import me.rerere.rikkahub.data.datastore.SystemToolsSetting
@@ -693,83 +693,6 @@ fun SettingSystemToolsPage(vm: SettingVM = koinViewModel()) {
                 }
             }
 
-            // TTS 语音合成
-            item {
-                CardGroup(
-                    title = { Text("TTS 语音合成") },
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                ) {
-                    item(
-                        leadingContent = { Icon(imageVector = HugeIcons.Speaker01, contentDescription = null) },
-                        headlineContent = { Text("启用语音合成工具") },
-                        supportingContent = { Text("允许AI将文本转换为语音，以语音条形式回复。兼容 OpenAI TTS API 格式") },
-                        trailingContent = {
-                            Switch(
-                                checked = systemToolsSetting.ttsEnabled,
-                                onCheckedChange = { enabled -> updateSystemToolsSetting(systemToolsSetting.copy(ttsEnabled = enabled)) }
-                            )
-                        }
-                    )
-                    if (systemToolsSetting.ttsEnabled) {
-                        item(
-                            headlineContent = { Text("API 地址") },
-                            supportingContent = {
-                                TextField(
-                                    value = systemToolsSetting.ttsApiUrl,
-                                    onValueChange = { url -> updateSystemToolsSetting(systemToolsSetting.copy(ttsApiUrl = url)) },
-                                    placeholder = { Text("https://api.openai.com/v1/audio/speech") },
-                                    modifier = Modifier.fillMaxSize(), singleLine = true,
-                                    shape = MaterialTheme.shapes.small,
-                                    colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent)
-                                )
-                            }
-                        )
-                        item(
-                            headlineContent = { Text("API Key") },
-                            supportingContent = {
-                                TextField(
-                                    value = systemToolsSetting.ttsApiKey,
-                                    onValueChange = { key -> updateSystemToolsSetting(systemToolsSetting.copy(ttsApiKey = key)) },
-                                    placeholder = { Text("sk-...") },
-                                    modifier = Modifier.fillMaxSize(), singleLine = true,
-                                    shape = MaterialTheme.shapes.small,
-                                    colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent)
-                                )
-                            }
-                        )
-                        item(
-                            headlineContent = { Text("Model") },
-                            supportingContent = {
-                                TextField(
-                                    value = systemToolsSetting.ttsModel,
-                                    onValueChange = { model -> updateSystemToolsSetting(systemToolsSetting.copy(ttsModel = model)) },
-                                    placeholder = { Text("tts-1") },
-                                    modifier = Modifier.fillMaxSize(), singleLine = true,
-                                    shape = MaterialTheme.shapes.small,
-                                    colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent)
-                                )
-                            }
-                        )
-                        item(
-                            headlineContent = { Text("Voice") },
-                            supportingContent = {
-                                TextField(
-                                    value = systemToolsSetting.ttsVoice,
-                                    onValueChange = { voice -> updateSystemToolsSetting(systemToolsSetting.copy(ttsVoice = voice)) },
-                                    placeholder = { Text("alloy") },
-                                    modifier = Modifier.fillMaxSize(), singleLine = true,
-                                    shape = MaterialTheme.shapes.small,
-                                    colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent)
-                                )
-                            }
-                        )
-                        item(
-                            headlineContent = { Text("说明") },
-                            supportingContent = { Text("AI 会在用户要求语音回复时调用 TTS 工具，将文本转为音频并以语音条形式展示。API 需兼容 OpenAI TTS 格式（POST /v1/audio/speech，返回音频二进制流）。") }
-                        )
-                    }
-                }
-            }
         }
 
         PermissionManager(permissionState = locationPermissionState)

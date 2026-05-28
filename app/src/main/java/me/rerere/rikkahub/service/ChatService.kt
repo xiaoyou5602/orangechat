@@ -62,7 +62,6 @@ import me.rerere.rikkahub.data.ai.tools.SystemTools
 import me.rerere.rikkahub.data.ai.tools.createSearchTools
 import me.rerere.rikkahub.data.ai.tools.createSkillTools
 import me.rerere.rikkahub.data.files.SkillManager
-import me.rerere.rikkahub.data.service.MemoryBankService
 import me.rerere.rikkahub.plugin.loader.PluginLoader
 import me.rerere.rikkahub.plugin.provider.PluginToolProvider
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
@@ -145,7 +144,6 @@ class ChatService(
     private val filesManager: FilesManager,
     private val skillManager: SkillManager,
     private val pluginToolProvider: PluginToolProvider,
-    private val memoryBankService: MemoryBankService,
     private val pluginLoader: PluginLoader,
 ) {
     // 统一会话管理
@@ -660,30 +658,6 @@ class ChatService(
                 pluginLoader.callEvent("message_received", eventData)
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to trigger message_received event", e)
-            }
-
-            // 自动存储消息到记忆库 & 检查阶段总结
-            launchWithConversationReference(conversationId) {
-                try {
-                    if (memoryBankService.autoStoreMessages) {
-                        val finalMessages = finalConversation.currentMessages.takeLast(2)
-                        for (msg in finalMessages) {
-                            val text = msg.toText()
-                            if (text.isNotBlank()) {
-                                memoryBankService.storeMessage(
-                                    content = text,
-                                    role = msg.role.name.lowercase(),
-                                    conversationId = conversationId.toString(),
-                                    assistantId = assistant.id.toString()
-                                )
-                            }
-                        }
-                        // 检查并执行阶段总结（懒执行）
-                        memoryBankService.checkAndPerformPhaseSummary(assistant.id.toString())
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "记忆库自动存储失败", e)
-                }
             }
 
             launchWithConversationReference(conversationId) {

@@ -5,11 +5,19 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import me.rerere.ai.provider.ProviderSetting
+import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.service.MemoryBankService
 import me.rerere.rikkahub.plugin.model.PluginInfo
 import okhttp3.OkHttpClient
 import java.util.concurrent.Executors
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlin.uuid.Uuid
 
 /**
  * 插件加载器
@@ -18,7 +26,8 @@ import kotlinx.coroutines.asCoroutineDispatcher
 class PluginLoader(
     private val context: Context,
     private val okHttpClient: OkHttpClient,
-    private val memoryBankService: MemoryBankService? = null
+    private val memoryBankService: MemoryBankService? = null,
+    private val settingsStore: SettingsStore? = null
 ) {
     companion object {
         private const val TAG = "PluginLoader"
@@ -59,8 +68,9 @@ class PluginLoader(
             val sandbox = PluginSandbox(context, okHttpClient, memoryBankService)
             sandbox.initialize()
 
-            // 注入配置
-            sandbox.injectConfig(pluginInfo.config)
+            // 解析模型配置并注入
+            val resolvedConfig = resolveModelConfig(pluginInfo)
+            sandbox.injectConfig(resolvedConfig)
 
             // 执行JS代码
             sandbox.evaluateFile(entryFile)
@@ -195,6 +205,56 @@ class PluginLoader(
                 .filter { it.event == "daily_cron" }
                 .map { hook -> plugin to hook.handler }
         }
+    }
+
+    /**
+     * 解析模型配置
+     * 将 model 类型的配置值（UUID）解析为实际的 modelId、baseUrl、apiKey
+     * 并注入为额外的配置字段：{name}_model_id, {name}_base_url, {name}_api_key
+     */
+    private fun resolveModelConfig(pluginInfo: PluginInfo): Map<String, JsonElement> {
+        val config = pluginInfo.config.toMutableMap()
+        val store = settingsStore ?: return config
+        val settings = store.settingsFlow.value
+
+        // 遍历 manifest 中的 model 类型配置字段
+        pluginInfo.manifest.config.forEach { field ->
+            if (field.type == "model") {
+                val modelUuidStr = (config[field.name] as? JsonPrimitive)?.contentOrNull
+                if (modelUuidStr.isNullOrBlank()) return@forEach
+
+                try {
+                    val modelUuid = Uuid.parse(modelUuidStr)
+                    val model = settings.findModelById(modelUuid) ?: return@forEach
+                    val provider = model.findProvider(settings.providers) ?: return@forEach
+
+                    // 获取 provider 的 baseUrl 和 apiKey
+                    val baseUrl = when (provider) {
+                        is ProviderSetting.OpenAI -> provider.baseUrl
+                        is ProviderSetting.Google -> provider.baseUrl
+                        is ProviderSetting.Claude -> provider.baseUrl
+                    }
+                    val apiKey = when (provider) {
+                        is ProviderSetting.OpenAI -> provider.apiKey
+                        is ProviderSetting.Google -> provider.apiKey
+                        is ProviderSetting.Claude -> provider.apiKey
+                    }
+
+                    // 将 UUID 值替换为实际的 modelId（如 "gpt-4o-mini"）
+                    config[field.name] = JsonPrimitive(model.modelId)
+
+                    // 注入额外的连接信息
+                    config["${field.name}_base_url"] = JsonPrimitive(baseUrl)
+                    config["${field.name}_api_key"] = JsonPrimitive(apiKey)
+
+                    Log.d(TAG, "Resolved model config '${field.name}': modelId=${model.modelId}, baseUrl=$baseUrl")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to resolve model config '${field.name}': ${e.message}")
+                }
+            }
+        }
+
+        return config
     }
 
     /**
