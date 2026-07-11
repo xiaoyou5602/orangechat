@@ -153,6 +153,8 @@
   <string name="assistant_page_top_p_warning">何をしているのか理解している場合を除き、この値を変更しないでください</string>
   <string name="assistant_page_use_assistant_avatar">アシスタントアバターを使用</string>
   <string name="assistant_page_use_assistant_avatar_desc">チャットでモデルアバターと名前ではなくアシスタントアバターと名前を使用</string>
+  <string name="assistant_page_split_bubble_by_line_title">行ごとに吹き出しを分割</string>
+  <string name="assistant_page_split_bubble_by_line_desc">モデル自身が書いた改行ごとに返信を個別のチャット吹き出しに分割します</string>
   <string name="audio">音声</string>
   <string name="avatar_cancel">キャンセル</string>
   <string name="avatar_change_avatar">アバターを変更</string>

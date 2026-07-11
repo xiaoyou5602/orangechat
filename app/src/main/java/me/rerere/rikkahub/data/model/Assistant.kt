@@ -1,5 +1,5 @@
 package me.rerere.rikkahub.data.model
-
+ 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import me.rerere.ai.core.MessageRole
@@ -9,7 +9,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import kotlin.uuid.Uuid
-
+ 
 @Serializable
 data class Assistant(
     val id: Uuid = Uuid.random(),
@@ -46,27 +46,28 @@ data class Assistant(
     val allowConversationSystemPrompt: Boolean = false, // 允许对话单独重写 system prompt
     val allowSkipReply: Boolean = false,
     val externalMemoryIds: Set<Uuid> = emptySet(),      // 关联的外置记忆库 ID
+    val splitBubbleByLine: Boolean = false,             // 按模型自己写的换行拆分成多个独立气泡
 )
-
+ 
 @Serializable
 data class QuickMessage(
     val id: Uuid = Uuid.random(),
     val title: String = "",
     val content: String = "",
 )
-
+ 
 @Serializable
 data class AssistantMemory(
     val id: Int,
     val content: String = "",
 )
-
+ 
 @Serializable
 enum class AssistantAffectScope {
     USER,
     ASSISTANT,
 }
-
+ 
 @Serializable
 data class AssistantRegex(
     val id: Uuid,
@@ -77,7 +78,7 @@ data class AssistantRegex(
     val affectingScope: Set<AssistantAffectScope> = setOf(),
     val visualOnly: Boolean = false, // 是否仅在视觉上影响
 )
-
+ 
 fun String.replaceRegexes(
     assistant: Assistant?,
     scope: AssistantAffectScope,
@@ -104,7 +105,7 @@ fun String.replaceRegexes(
         }
     }
 }
-
+ 
 /**
  * 注入位置
  */
@@ -112,20 +113,20 @@ fun String.replaceRegexes(
 enum class InjectionPosition {
     @SerialName("before_system_prompt")
     BEFORE_SYSTEM_PROMPT,   // 系统提示词之前
-
+ 
     @SerialName("after_system_prompt")
     AFTER_SYSTEM_PROMPT,    // 系统提示词之后（最常用）
-
+ 
     @SerialName("top_of_chat")
     TOP_OF_CHAT,            // 对话最开头（第一条用户消息之前）
-
+ 
     @SerialName("bottom_of_chat")
     BOTTOM_OF_CHAT,         // 最新消息之前（当前用户输入之前）
-
+ 
     @SerialName("at_depth")
     AT_DEPTH,               // 在指定深度位置插入（从最新消息往前数）
 }
-
+ 
 /**
  * 提示词注入
  *
@@ -142,7 +143,7 @@ sealed class PromptInjection {
     abstract val content: String
     abstract val injectDepth: Int  // 当 position 为 AT_DEPTH 时使用，表示从最新消息往前数的位置
     abstract val role: MessageRole  // 注入角色：USER 或 ASSISTANT
-
+ 
     /**
      * 模式注入 - 基于开关状态触发
      */
@@ -158,7 +159,7 @@ sealed class PromptInjection {
         override val injectDepth: Int = 4,
         override val role: MessageRole = MessageRole.USER,
     ) : PromptInjection()
-
+ 
     /**
      * 正则注入 - 基于内容匹配触发（世界书）
      */
@@ -180,7 +181,7 @@ sealed class PromptInjection {
         val constantActive: Boolean = false,       // 常驻激活（无需匹配）
     ) : PromptInjection()
 }
-
+ 
 /**
  * Lorebook - 组织管理多个 RegexInjection
  */
@@ -192,7 +193,7 @@ data class Lorebook(
     val enabled: Boolean = true,
     val entries: List<PromptInjection.RegexInjection> = emptyList(),
 )
-
+ 
 /**
  * 检查 RegexInjection 是否被触发
  *
@@ -203,7 +204,7 @@ fun PromptInjection.RegexInjection.isTriggered(context: String): Boolean {
     if (!enabled) return false
     if (constantActive) return true
     if (keywords.isEmpty()) return false
-
+ 
     return keywords.any { keyword ->
         if (useRegex) {
             try {
@@ -221,7 +222,7 @@ fun PromptInjection.RegexInjection.isTriggered(context: String): Boolean {
         }
     }
 }
-
+ 
 /**
  * 从消息列表中提取用于匹配的上下文文本
  *
@@ -237,7 +238,7 @@ fun extractContextForMatching(
         .takeLast(scanDepth)
         .joinToString("\n") { it.toText() }
 }
-
+ 
 /**
  * 获取所有被触发的注入，按优先级排序
  *

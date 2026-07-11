@@ -1,5 +1,5 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
-
+ 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -53,7 +53,7 @@ import org.koin.core.parameter.parametersOf
 import kotlin.math.roundToInt
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.model.Tag as DataTag
-
+ 
 @Composable
 fun AssistantBasicPage(id: String) {
     val vm: AssistantDetailVM = koinViewModel(
@@ -66,7 +66,7 @@ fun AssistantBasicPage(id: String) {
     val tags by vm.tags.collectAsStateWithLifecycle()
     val workspaces by vm.workspaces.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-
+ 
     Scaffold(
         topBar = {
             LargeFlexibleTopAppBar(
@@ -94,7 +94,7 @@ fun AssistantBasicPage(id: String) {
         )
     }
 }
-
+ 
 @Composable
 internal fun AssistantBasicContent(
     modifier: Modifier = Modifier,
@@ -135,7 +135,7 @@ internal fun AssistantBasicContent(
                     .heroAnimation("assistant_${assistant.id}")
             )
         }
-
+ 
         Card(
             colors = CustomColors.cardColorsOnSurfaceContainer
         ) {
@@ -144,7 +144,7 @@ internal fun AssistantBasicContent(
                     Text(stringResource(R.string.assistant_page_name))
                 },
                 modifier = Modifier.padding(8.dp),
-
+ 
             ) {
                 OutlinedTextField(
                     value = assistant.name,
@@ -158,9 +158,9 @@ internal fun AssistantBasicContent(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-
+ 
             HorizontalDivider()
-
+ 
             FormItem(
                 label = {
                     Text(stringResource(R.string.assistant_page_tags))
@@ -175,9 +175,9 @@ internal fun AssistantBasicContent(
                     },
                 )
             }
-
+ 
             HorizontalDivider()
-
+ 
             FormItem(
                 label = {
                     Text(stringResource(R.string.assistant_page_workspace_binding))
@@ -202,9 +202,9 @@ internal fun AssistantBasicContent(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-
+ 
             HorizontalDivider()
-
+ 
             FormItem(
                 modifier = Modifier.padding(8.dp),
                 label = {
@@ -226,8 +226,32 @@ internal fun AssistantBasicContent(
                     )
                 }
             )
+ 
+            HorizontalDivider()
+ 
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_split_bubble_by_line_title))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_split_bubble_by_line_desc))
+                },
+                tail = {
+                    Switch(
+                        checked = assistant.splitBubbleByLine,
+                        onCheckedChange = {
+                            onUpdate(
+                                assistant.copy(
+                                    splitBubbleByLine = it
+                                )
+                            )
+                        }
+                    )
+                }
+            )
         }
-
+ 
         Card(
             colors = CustomColors.cardColorsOnSurfaceContainer
         ) {
@@ -385,7 +409,7 @@ internal fun AssistantBasicContent(
                     steps = 0,
                     modifier = Modifier.fillMaxWidth()
                 )
-
+ 
                 Text(
                     text = if (assistant.contextMessageSize > 0) stringResource(
                         R.string.assistant_page_context_message_count,
@@ -469,7 +493,7 @@ internal fun AssistantBasicContent(
                 )
             }
         }
-
+ 
         Card(
             colors = CustomColors.cardColorsOnSurfaceContainer
         ) {
@@ -485,7 +509,7 @@ internal fun AssistantBasicContent(
                     )
                 }
             )
-
+ 
             if (assistant.background != null) {
                 val backgroundOpacity = assistant.backgroundOpacity.coerceIn(0f, 1f)
                 HorizontalDivider()
@@ -524,3 +548,4 @@ internal fun AssistantBasicContent(
         }
     }
 }
+ 

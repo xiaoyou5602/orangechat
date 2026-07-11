@@ -1,5 +1,5 @@
 package me.rerere.rikkahub.ui.components.message
-
+ 
 import android.content.Intent
 import android.media.MediaPlayer
 import androidx.compose.animation.AnimatedVisibility
@@ -110,10 +110,11 @@ import androidx.compose.foundation.Image
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.base64Encode
 import me.rerere.rikkahub.utils.openUrl
+import me.rerere.rikkahub.utils.splitIntoBubbleSegments
 import me.rerere.rikkahub.utils.urlDecode
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
-
+ 
 @Composable
 fun ChatMessage(
     node: MessageNode,
@@ -199,7 +200,7 @@ fun ChatMessage(
                 onToolAnswer = onToolAnswer,
                 onUserMessageClick = if (message.role == MessageRole.USER) onEdit else null,
             )
-
+ 
             message.translation?.let { translation ->
                 CollapsibleTranslationText(
                     content = translation,
@@ -207,13 +208,13 @@ fun ChatMessage(
                 )
             }
         }
-
+ 
         val showActions = if (lastMessage) {
             !loading
         } else {
             message.parts.isEmptyUIMessage().not()
         }
-
+ 
         AnimatedVisibility(
             visible = showActions,
             enter = slideInVertically { it / 2 } + fadeIn(),
@@ -235,7 +236,7 @@ fun ChatMessage(
                 )
             }
         }
-
+ 
         ProvideTextStyle(textStyle) {
             ChatMessageNerdLine(message = message)
         }
@@ -272,7 +273,7 @@ fun ChatMessage(
             }
         )
     }
-
+ 
     if (showSelectCopySheet) {
         ChatMessageCopySheet(
             message = message,
@@ -282,7 +283,7 @@ fun ChatMessage(
         )
     }
 }
-
+ 
 @OptIn(FlowPreview::class)
 @Composable
 private fun MessagePartsBlock(
@@ -298,13 +299,13 @@ private fun MessagePartsBlock(
 ) {
     val context = LocalContext.current
     val contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
-
+ 
     // 消息输出HapticFeedback
     val hapticFeedback = LocalHapticFeedback.current
     val settings = LocalSettings.current
     val bubbleAlpha = 1f - settings.displaySetting.chatBubbleTransparency / 100f
     val partsState by rememberUpdatedState(parts)
-
+ 
     val handleClickCitation: (String) -> Unit = remember {
         handler@{ citationId ->
             partsState.forEach { part ->
@@ -334,7 +335,7 @@ private fun MessagePartsBlock(
                 }
             }
     }
-
+ 
     // Render parts in original order (group thinking/tool as chain-of-thought)
     val groupedParts = remember(parts) { parts.groupMessageParts() }
     groupedParts.fastForEach { block ->
@@ -358,7 +359,7 @@ private fun MessagePartsBlock(
                                     )
                                 }
                             }
-
+ 
                             is ThinkingStep.ToolStep -> {
                                 key(step.tool.toolCallId.ifBlank { step.hashCode().toString() }) {
                                     ChatMessageToolStep(
@@ -374,7 +375,7 @@ private fun MessagePartsBlock(
                     }
                 }
             }
-
+ 
             is MessagePartBlock.ContentBlock -> key(block.index) {
                 when (val part = block.part) {
                     is UIMessagePart.Text -> {
@@ -401,6 +402,49 @@ private fun MessagePartsBlock(
                                                 ),
                                                 onClickCitation = handleClickCitation
                                             )
+                                        }
+                                    }
+                                } else if (assistant?.splitBubbleByLine == true) {
+                                    // 分气泡: 按模型自己写的换行 (\n) 拆成多个独立气泡,
+                                    // 拆分逻辑见 splitIntoBubbleSegments (会保护代码块/表格内部的换行)
+                                    val bubbleSegments = remember(displayText) {
+                                        displayText.splitIntoBubbleSegments()
+                                    }
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        bubbleSegments.fastForEachIndexed { segIndex, segment ->
+                                            key(segIndex) {
+                                                if (settings.displaySetting.showAssistantBubble) {
+                                                    Surface(
+                                                        modifier = Modifier.animateContentSize(),
+                                                        shape = RoundedCornerShape(16.dp),
+                                                        color = (settings.displaySetting.assistantBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.surfaceContainerHigh).copy(alpha = bubbleAlpha),
+                                                    ) {
+                                                        Column(modifier = Modifier.padding(8.dp)) {
+                                                            MarkdownBlock(
+                                                                content = segment.replaceRegexes(
+                                                                    assistant = assistant,
+                                                                    scope = AssistantAffectScope.ASSISTANT,
+                                                                    visual = true,
+                                                                ),
+                                                                onClickCitation = handleClickCitation,
+                                                            )
+                                                        }
+                                                    }
+                                                } else {
+                                                    MarkdownBlock(
+                                                        content = segment.replaceRegexes(
+                                                            assistant = assistant,
+                                                            scope = AssistantAffectScope.ASSISTANT,
+                                                            visual = true,
+                                                        ),
+                                                        onClickCitation = handleClickCitation,
+                                                        modifier = Modifier
+                                                            .animateContentSize()
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 } else {
@@ -438,7 +482,7 @@ private fun MessagePartsBlock(
                             }
                         }
                     }
-
+ 
                     is UIMessagePart.Video -> {
                         Surface(
                             tonalElevation = 2.dp,
@@ -461,18 +505,18 @@ private fun MessagePartsBlock(
                             }
                         }
                     }
-
+ 
                     is UIMessagePart.Audio -> {
                         AudioPlayerBubble(url = part.url)
                     }
-
+ 
                     is UIMessagePart.VoiceMessage -> {
                         VoiceMessageBubble(
                             voiceMessage = part,
                             isUser = role == MessageRole.USER,
                         )
                     }
-
+ 
                     is UIMessagePart.Image -> {
                         val isImageLoading =
                             part.url.isBlank() || part.url.matches(Regex("^data:image/[^;]*;base64,\\s*$"))
@@ -494,7 +538,7 @@ private fun MessagePartsBlock(
                             )
                         }
                     }
-
+ 
                     is UIMessagePart.Document -> {
                         Surface(
                             tonalElevation = 2.dp,
@@ -527,7 +571,7 @@ private fun MessagePartsBlock(
                                                 modifier = Modifier.size(20.dp)
                                             )
                                         }
-
+ 
                                         "application/pdf" -> {
                                             Icon(
                                                 painter = painterResource(R.drawable.pdf),
@@ -535,7 +579,7 @@ private fun MessagePartsBlock(
                                                 modifier = Modifier.size(20.dp)
                                             )
                                         }
-
+ 
                                         else -> {
                                             Icon(
                                                 imageVector = HugeIcons.File02,
@@ -544,7 +588,7 @@ private fun MessagePartsBlock(
                                             )
                                         }
                                     }
-
+ 
                                     Text(
                                         text = part.fileName,
                                         maxLines = 1,
@@ -555,7 +599,7 @@ private fun MessagePartsBlock(
                             }
                         }
                     }
-
+ 
                     else -> {
                         // Skip unknown part types (e.g., deprecated ToolCall, ToolResult, Search)
                     }
@@ -563,7 +607,7 @@ private fun MessagePartsBlock(
             }
         }
     }
-
+ 
     // Annotations (always rendered at the end)
     if (annotations.isNotEmpty()) {
         Column(
@@ -620,7 +664,7 @@ private fun MessagePartsBlock(
             }
         }
     }
-
+ 
     // 工作区文件 chip: assistant 消息下方展示被 workspace_write_file/
     // workspace_edit_file 写入/编辑的文件, 点击可导出/分享。
     // 仅在归属工作区的 assistant 消息中渲染, 不影响用户消息和其它布局。
@@ -628,7 +672,7 @@ private fun MessagePartsBlock(
         EditedFilesList(parts = parts, assistant = assistant)
     }
 }
-
+ 
 @Composable
 @Suppress("UnusedCrossTarget")
 internal fun AudioPlayerBubble(url: String) {
@@ -638,22 +682,22 @@ internal fun AudioPlayerBubble(url: String) {
     var currentMs by remember { mutableIntStateOf(0) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var isPrepared by remember { mutableStateOf(false) }
-
+ 
     // Generate pseudo-random waveform bar heights (deterministic per url)
     val waveformBars = remember(url) {
         val rnd = java.util.Random(url.hashCode().toLong())
         List(40) { 0.15f + rnd.nextFloat() * 0.85f }
     }
-
+ 
     val progress = if (durationMs > 0) currentMs.toFloat() / durationMs else 0f
-
+ 
     DisposableEffect(Unit) {
         onDispose {
             mediaPlayer?.release()
             mediaPlayer = null
         }
     }
-
+ 
     // Progress ticker
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
@@ -665,7 +709,7 @@ internal fun AudioPlayerBubble(url: String) {
             kotlinx.coroutines.delay(50)
         }
     }
-
+ 
     // Animate waveform bars when playing
     val animatedBars = remember { mutableStateOf(waveformBars) }
     LaunchedEffect(isPlaying, progress) {
@@ -686,10 +730,10 @@ internal fun AudioPlayerBubble(url: String) {
             animatedBars.value = waveformBars
         }
     }
-
+ 
     val activeColor = MaterialTheme.colorScheme.primary
     val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
-
+ 
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(18.dp))
@@ -741,9 +785,9 @@ internal fun AudioPlayerBubble(url: String) {
                 modifier = Modifier.size(22.dp)
             )
         }
-
+ 
         Spacer(modifier = Modifier.width(8.dp))
-
+ 
         // Waveform bars
         Canvas(
             modifier = Modifier
@@ -756,7 +800,7 @@ internal fun AudioPlayerBubble(url: String) {
             val barWidth = 2.5f
             val gap = (totalWidth - barWidth * barCount) / (barCount - 1).coerceAtLeast(1)
             val playedBarCount = (progress * barCount).toInt()
-
+ 
             animatedBars.value.forEachIndexed { index, barRatio ->
                 val barHeight = size.height * barRatio.coerceIn(0.15f, 1f)
                 val x = index * (barWidth + gap)
@@ -769,9 +813,9 @@ internal fun AudioPlayerBubble(url: String) {
                 )
             }
         }
-
+ 
         Spacer(modifier = Modifier.width(6.dp))
-
+ 
         // Duration text
         val displaySec = if (isPlaying || currentMs > 0) {
             val remaining = (durationMs - currentMs) / 1000
@@ -789,7 +833,7 @@ internal fun AudioPlayerBubble(url: String) {
         )
     }
 }
-
+ 
 @Composable
 internal fun VoiceMessageBubble(
     voiceMessage: UIMessagePart.VoiceMessage,
@@ -798,16 +842,16 @@ internal fun VoiceMessageBubble(
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(false) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-
+ 
     val durationSec = (voiceMessage.duration / 1000).coerceAtLeast(1)
-
+ 
     DisposableEffect(voiceMessage.url) {
         onDispose {
             mediaPlayer?.release()
             mediaPlayer = null
         }
     }
-
+ 
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
             mediaPlayer?.let {
@@ -818,7 +862,7 @@ internal fun VoiceMessageBubble(
             kotlinx.coroutines.delay(50)
         }
     }
-
+ 
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = if (isUser) MaterialTheme.colorScheme.secondaryContainer
@@ -905,4 +949,4 @@ internal fun VoiceMessageBubble(
         }
     }
 }
-
+ 

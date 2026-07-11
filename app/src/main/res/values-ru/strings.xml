@@ -153,6 +153,8 @@
   <string name="assistant_page_top_p_warning">Пожалуйста, не изменяйте это значение, если не уверены в своих действиях</string>
   <string name="assistant_page_use_assistant_avatar">Использовать аватар ассистента</string>
   <string name="assistant_page_use_assistant_avatar_desc">Использовать аватар и имя ассистента вместо аватара и имени модели в чатах</string>
+  <string name="assistant_page_split_bubble_by_line_title">Разделять сообщения по строкам</string>
+  <string name="assistant_page_split_bubble_by_line_desc">Разбивать ответ на отдельные пузыри чата по каждому переносу строки, написанному моделью</string>
   <string name="audio">Аудио</string>
   <string name="avatar_cancel">Отмена</string>
   <string name="avatar_change_avatar">Сменить аватар</string>

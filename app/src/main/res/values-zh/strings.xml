@@ -153,6 +153,8 @@
   <string name="assistant_page_top_p_warning">请不要修改此值, 除非你知道自己在做什么</string>
   <string name="assistant_page_use_assistant_avatar">使用助手头像</string>
   <string name="assistant_page_use_assistant_avatar_desc">在聊天中使用助手头像和名字而不是模型头像和名字</string>
+  <string name="assistant_page_split_bubble_by_line_title">按行拆分气泡</string>
+  <string name="assistant_page_split_bubble_by_line_desc">将助手回复按模型自己写的换行拆分成多个独立气泡发送</string>
   <string name="audio">音频</string>
   <string name="avatar_cancel">取消</string>
   <string name="avatar_change_avatar">更换头像</string>

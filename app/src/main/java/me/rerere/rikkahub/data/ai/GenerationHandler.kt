@@ -1,5 +1,5 @@
 package me.rerere.rikkahub.data.ai
-
+ 
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -51,16 +51,16 @@ import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.utils.applyPlaceholders
 import java.util.Locale
 import kotlin.time.Clock
-
+ 
 private const val TAG = "GenerationHandler"
-
+ 
 @Serializable
 sealed interface GenerationChunk {
     data class Messages(
         val messages: List<UIMessage>
     ) : GenerationChunk
 }
-
+ 
 class GenerationHandler(
     private val context: Context,
     private val providerManager: ProviderManager,
@@ -87,12 +87,12 @@ class GenerationHandler(
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
-
+ 
         var messages: List<UIMessage> = messages
-
+ 
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
-
+ 
             val toolsInternal = buildList {
                 Log.i(TAG, "generateInternal: build tools($assistant)")
                 if (assistant?.enableMemory == true) {
@@ -118,14 +118,14 @@ class GenerationHandler(
                 add(buildWriteFilesTool())
                 addAll(tools)
             }
-
+ 
             // Check if we have tool calls ready to continue after user interaction.
             val pendingTools = messages.lastOrNull()?.getTools()?.filter {
                 it.canResumeExecution
             } ?: emptyList()
-
+ 
             val toolsToProcess: List<UIMessagePart.Tool>
-
+ 
             // Skip generation if we have approved/denied tool calls to handle
             if (pendingTools.isEmpty()) {
                 generateInternal(
@@ -183,13 +183,13 @@ class GenerationHandler(
                         .toLocalDateTime(TimeZone.currentSystemDefault())
                 )
                 emit(GenerationChunk.Messages(messages))
-
+ 
                 val tools = messages.last().getTools().filter { !it.isExecuted }
                 if (tools.isEmpty()) {
                     // no tool calls, break
                     break
                 }
-
+ 
                 // Check for tools that need approval
                 var hasPendingApproval = false
                 val updatedTools = tools.map { tool ->
@@ -205,11 +205,11 @@ class GenerationHandler(
                             hasPendingApproval = true
                             tool
                         }
-
+ 
                         else -> tool
                     }
                 }
-
+ 
                 // If any tools were updated to Pending, update the message and break
                 if (updatedTools != tools) {
                     val lastMessage = messages.last()
@@ -223,20 +223,20 @@ class GenerationHandler(
                     messages = messages.dropLast(1) + lastMessage.copy(parts = updatedParts)
                     emit(GenerationChunk.Messages(messages))
                 }
-
+ 
                 // If there are pending approvals, break and wait for user
                 if (hasPendingApproval) {
                     Log.i(TAG, "generateText: waiting for tool approval")
                     break
                 }
-
+ 
                 toolsToProcess = updatedTools
             } else {
                 // Resuming after user interaction - use the resumable tools directly.
                 Log.i(TAG, "generateText: resuming with ${pendingTools.size} resumable tools")
                 toolsToProcess = messages.last().getTools().filter { it.canResumeExecution }
             }
-
+ 
             // Handle tools (execute approved tools, handle denied tools)
             val executedTools = arrayListOf<UIMessagePart.Tool>()
             toolsToProcess.forEach { tool ->
@@ -259,7 +259,7 @@ class GenerationHandler(
                             )
                         )
                     }
-
+ 
                     is ToolApprovalState.Answered -> {
                         // Tool was answered by user (e.g., ask_user tool)
                         val answer = (tool.approvalState as ToolApprovalState.Answered).answer
@@ -269,11 +269,11 @@ class GenerationHandler(
                             )
                         )
                     }
-
+ 
                     is ToolApprovalState.Pending -> {
                         // Should not reach here, but just in case
                     }
-
+ 
                     else -> {
                         // Auto or Approved - execute the tool
                         runCatching {
@@ -310,12 +310,12 @@ class GenerationHandler(
                     }
                 }
             }
-
+ 
             if (executedTools.isEmpty()) {
                 // No results to add (all tools were pending)
                 break
             }
-
+ 
             // Update last message with executed tools (NOT create TOOL message)
             val lastMessage = messages.last()
             val updatedParts = lastMessage.parts.map { part ->
@@ -336,10 +336,10 @@ class GenerationHandler(
                 )
             )
         }
-
+ 
     }.conflate()
         .flowOn(Dispatchers.IO)
-
+ 
     private suspend fun generateInternal(
         assistant: Assistant,
         settings: Settings,
@@ -368,13 +368,13 @@ class GenerationHandler(
                 if (effectiveSystemPrompt.isNotBlank()) {
                     append(effectiveSystemPrompt)
                 }
-
+ 
                 // 记忆
                 if (assistant.enableMemory) {
                     appendLine()
                     append(buildMemoryPrompt(memories = memories))
                 }
-
+ 
                 // 外置记忆库召回
                 try {
                     val externalMemoryConfigs = settings.externalMemories.filter {
@@ -387,7 +387,7 @@ class GenerationHandler(
                         externalMemoryConfigs.forEach { config ->
                             runCatching {
                                 val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
-
+ 
                                 // 如果配置了向量模型，使用向量召回日记摘要
                                 if (config.embeddingModelId != null && queryText.isNotBlank()) {
                                     val embeddingModel = settings.findModelById(config.embeddingModelId)
@@ -454,22 +454,22 @@ class GenerationHandler(
                 } catch (e: Exception) {
                     Log.w(TAG, "External memory recall failed", e)
                 }
-
+ 
                 if (assistant.enableRecentChatsReference) {
                     appendLine()
                     append(buildRecentChatsPrompt(assistant, conversationRepo))
                 }
-
+ 
                 // 代码文件命名和ZIP打包功能说明
                 appendLine()
                 append(buildCodeBlockPrompt())
-
+ 
                 // 工具prompt
                 tools.forEach { tool ->
                     appendLine()
                     append(tool.systemPrompt(model, messages))
                 }
-
+ 
                 // 插件提示词注入
                 if (pluginPromptInjections.isNotEmpty()) {
                     pluginPromptInjections.forEach { injection ->
@@ -478,7 +478,7 @@ class GenerationHandler(
                         append(injection)
                     }
                 }
-
+ 
                 // 允许跳过回复
                 if (assistant.allowSkipReply) {
                     appendLine()
@@ -486,7 +486,15 @@ class GenerationHandler(
                     appendLine("## Skip Reply")
                     appendLine("If you determine that no reply is needed (e.g., the user's message doesn't require a response, or you have nothing meaningful to add), you may reply with exactly `[SKIP]` (without any other text). This message will be hidden from the user. Use this sparingly and only when truly appropriate.")
                 }
-
+ 
+                // 分气泡: 告知模型它自己能控制消息如何被拆成多个气泡
+                if (assistant.splitBubbleByLine) {
+                    appendLine()
+                    appendLine()
+                    appendLine("## Message Bubbles")
+                    appendLine("Your reply will be automatically split into separate chat bubbles at every line break (\\n) you write, similar to how a person sends several short texts in a row instead of one long message. You are fully in control of this: write a line break whenever you want the previous thought/sentence to appear as its own bubble, and keep things on the same line when they belong together. Do not insert blank lines purely for spacing — every line break becomes a new bubble, so use them intentionally. Exception: line breaks inside fenced code blocks (```) and Markdown tables are preserved as-is and will NOT create new bubbles, since those must stay intact as a single block.")
+                }
+ 
             }
             if (system.isNotBlank()) add(UIMessage.system(prompt = system))
             addAll(messages.limitContext(assistant.contextMessageSize))
@@ -499,7 +507,7 @@ class GenerationHandler(
             processingStatus = processingStatus,
             workspaceCwd = workspaceCwd,
         )
-
+ 
         var messages: List<UIMessage> = messages
         val params = TextGenerationParams(
             model = model,
@@ -572,7 +580,7 @@ class GenerationHandler(
             onUpdateMessages(messages)
         }
     }
-
+ 
     fun translateText(
         settings: Settings,
         sourceText: String,
@@ -583,19 +591,19 @@ class GenerationHandler(
             ?: error("Translation model not found")
         val provider = model.findProvider(settings.providers)
             ?: error("Translation provider not found")
-
+ 
         val providerHandler = providerManager.getProviderByType(provider)
-
+ 
         if (!ModelRegistry.QWEN_MT.match(model.modelId)) {
             // Use regular translation with prompt
             val prompt = settings.translatePrompt.applyPlaceholders(
                 "source_text" to sourceText,
                 "target_lang" to targetLanguage.toString(),
             )
-
+ 
             var messages = listOf(UIMessage.user(prompt))
             var translatedText = ""
-
+ 
             providerHandler.streamText(
                 providerSetting = provider,
                 messages = messages,
@@ -606,7 +614,7 @@ class GenerationHandler(
             ).collect { chunk ->
                 messages = messages.handleMessageChunk(chunk)
                 translatedText = messages.lastOrNull()?.toText() ?: ""
-
+ 
                 if (translatedText.isNotBlank()) {
                     onStreamUpdate?.invoke(translatedText)
                     emit(translatedText)
@@ -637,7 +645,7 @@ class GenerationHandler(
                 ),
             )
             val translatedText = chunk.choices.firstOrNull()?.message?.toText() ?: ""
-
+ 
             if (translatedText.isNotBlank()) {
                 onStreamUpdate?.invoke(translatedText)
                 emit(translatedText)
@@ -645,7 +653,7 @@ class GenerationHandler(
         }
     }.flowOn(Dispatchers.IO)
 }
-
+ 
 /**
  * 构建代码块提示 - 告知AI代码文件命名和ZIP打包功能
  */
@@ -669,3 +677,4 @@ private fun buildCodeBlockPrompt(): String = buildString {
     appendLine("   - The `edits` mode applies search/replace to the files from your previous `write_files` call. Files not mentioned in `edits` keep their content unchanged.")
     appendLine("   - Always use actual filenames (e.g. `MainActivity.kt`) as code block language tags, not just language names (e.g. `kotlin`).")
 }
+ 
