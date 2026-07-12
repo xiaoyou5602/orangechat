@@ -1,0 +1,114 @@
+[
+  {
+    "name": "ConversationTools.kt",
+    "path": "app/src/main/java/me/rerere/rikkahub/data/ai/tools/ConversationTools.kt",
+    "sha": "8c9c2be1cd54ad0ce702ea34d7b620c67e59e8c2",
+    "size": 4874,
+    "url": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/ConversationTools.kt?ref=master",
+    "html_url": "https://github.com/rikkahub/rikkahub/blob/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/ConversationTools.kt",
+    "git_url": "https://api.github.com/repos/rikkahub/rikkahub/git/blobs/8c9c2be1cd54ad0ce702ea34d7b620c67e59e8c2",
+    "download_url": "https://raw.githubusercontent.com/rikkahub/rikkahub/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/ConversationTools.kt",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/ConversationTools.kt?ref=master",
+      "git": "https://api.github.com/repos/rikkahub/rikkahub/git/blobs/8c9c2be1cd54ad0ce702ea34d7b620c67e59e8c2",
+      "html": "https://github.com/rikkahub/rikkahub/blob/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/ConversationTools.kt"
+    }
+  },
+  {
+    "name": "MemoryTools.kt",
+    "path": "app/src/main/java/me/rerere/rikkahub/data/ai/tools/MemoryTools.kt",
+    "sha": "1fcd4618062331737144ebfd8ef924a3a057e9bc",
+    "size": 4748,
+    "url": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/MemoryTools.kt?ref=master",
+    "html_url": "https://github.com/rikkahub/rikkahub/blob/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/MemoryTools.kt",
+    "git_url": "https://api.github.com/repos/rikkahub/rikkahub/git/blobs/1fcd4618062331737144ebfd8ef924a3a057e9bc",
+    "download_url": "https://raw.githubusercontent.com/rikkahub/rikkahub/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/MemoryTools.kt",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/MemoryTools.kt?ref=master",
+      "git": "https://api.github.com/repos/rikkahub/rikkahub/git/blobs/1fcd4618062331737144ebfd8ef924a3a057e9bc",
+      "html": "https://github.com/rikkahub/rikkahub/blob/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/MemoryTools.kt"
+    }
+  },
+  {
+    "name": "SearchTools.kt",
+    "path": "app/src/main/java/me/rerere/rikkahub/data/ai/tools/SearchTools.kt",
+    "sha": "ddd8991569261b76d9dd961f3be61462f25f3eba",
+    "size": 5970,
+    "url": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/SearchTools.kt?ref=master",
+    "html_url": "https://github.com/rikkahub/rikkahub/blob/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/SearchTools.kt",
+    "git_url": "https://api.github.com/repos/rikkahub/rikkahub/git/blobs/ddd8991569261b76d9dd961f3be61462f25f3eba",
+    "download_url": "https://raw.githubusercontent.com/rikkahub/rikkahub/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/SearchTools.kt",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/SearchTools.kt?ref=master",
+      "git": "https://api.github.com/repos/rikkahub/rikkahub/git/blobs/ddd8991569261b76d9dd961f3be61462f25f3eba",
+      "html": "https://github.com/rikkahub/rikkahub/blob/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/SearchTools.kt"
+    }
+  },
+  {
+    "name": "SkillsTools.kt",
+    "path": "app/src/main/java/me/rerere/rikkahub/data/ai/tools/SkillsTools.kt",
+    "sha": "f55255fc73c97b93fb9ac498116242cf53bee02f",
+    "size": 3641,
+    "url": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/SkillsTools.kt?ref=master",
+    "html_url": "https://github.com/rikkahub/rikkahub/blob/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/SkillsTools.kt",
+    "git_url": "https://api.github.com/repos/rikkahub/rikkahub/git/blobs/f55255fc73c97b93fb9ac498116242cf53bee02f",
+    "download_url": "https://raw.githubusercontent.com/rikkahub/rikkahub/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/SkillsTools.kt",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/SkillsTools.kt?ref=master",
+      "git": "https://api.github.com/repos/rikkahub/rikkahub/git/blobs/f55255fc73c97b93fb9ac498116242cf53bee02f",
+      "html": "https://github.com/rikkahub/rikkahub/blob/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/SkillsTools.kt"
+    }
+  },
+  {
+    "name": "TextReplacers.kt",
+    "path": "app/src/main/java/me/rerere/rikkahub/data/ai/tools/TextReplacers.kt",
+    "sha": "af68858e176c68dcde97c30ea202d19aa6dd6616",
+    "size": 7202,
+    "url": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/TextReplacers.kt?ref=master",
+    "html_url": "https://github.com/rikkahub/rikkahub/blob/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/TextReplacers.kt",
+    "git_url": "https://api.github.com/repos/rikkahub/rikkahub/git/blobs/af68858e176c68dcde97c30ea202d19aa6dd6616",
+    "download_url": "https://raw.githubusercontent.com/rikkahub/rikkahub/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/TextReplacers.kt",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/TextReplacers.kt?ref=master",
+      "git": "https://api.github.com/repos/rikkahub/rikkahub/git/blobs/af68858e176c68dcde97c30ea202d19aa6dd6616",
+      "html": "https://github.com/rikkahub/rikkahub/blob/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/TextReplacers.kt"
+    }
+  },
+  {
+    "name": "WorkspaceTools.kt",
+    "path": "app/src/main/java/me/rerere/rikkahub/data/ai/tools/WorkspaceTools.kt",
+    "sha": "dac28314aa9caae4af340f11d1e0a78a142b4afe",
+    "size": 18088,
+    "url": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/WorkspaceTools.kt?ref=master",
+    "html_url": "https://github.com/rikkahub/rikkahub/blob/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/WorkspaceTools.kt",
+    "git_url": "https://api.github.com/repos/rikkahub/rikkahub/git/blobs/dac28314aa9caae4af340f11d1e0a78a142b4afe",
+    "download_url": "https://raw.githubusercontent.com/rikkahub/rikkahub/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/WorkspaceTools.kt",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/WorkspaceTools.kt?ref=master",
+      "git": "https://api.github.com/repos/rikkahub/rikkahub/git/blobs/dac28314aa9caae4af340f11d1e0a78a142b4afe",
+      "html": "https://github.com/rikkahub/rikkahub/blob/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/WorkspaceTools.kt"
+    }
+  },
+  {
+    "name": "local",
+    "path": "app/src/main/java/me/rerere/rikkahub/data/ai/tools/local",
+    "sha": "1fb42026f826493315c0e76804549c00dc4c743c",
+    "size": 0,
+    "url": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/local?ref=master",
+    "html_url": "https://github.com/rikkahub/rikkahub/tree/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/local",
+    "git_url": "https://api.github.com/repos/rikkahub/rikkahub/git/trees/1fb42026f826493315c0e76804549c00dc4c743c",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/rikkahub/rikkahub/contents/app/src/main/java/me/rerere/rikkahub/data/ai/tools/local?ref=master",
+      "git": "https://api.github.com/repos/rikkahub/rikkahub/git/trees/1fb42026f826493315c0e76804549c00dc4c743c",
+      "html": "https://github.com/rikkahub/rikkahub/tree/master/app/src/main/java/me/rerere/rikkahub/data/ai/tools/local"
+    }
+  }
+]

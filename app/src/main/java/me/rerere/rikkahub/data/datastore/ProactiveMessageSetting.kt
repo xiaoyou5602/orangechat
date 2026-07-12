@@ -11,4 +11,8 @@ data class ProactiveMessageSetting(
     // 是否允许 AI 根据上下文判断后强制跳转屏幕到聊天界面
     val allowForceJump: Boolean = false,
     val jumpIdleThresholdMinutes: Int = 120, // 用户多久没回复(分钟)才允许跳转屏幕，默认2小时
+    // 激进模式：每次手机切换应用/开屏锁屏/回桌面都触发AI思考
+    val aggressiveModeEnabled: Boolean = false,
+    // 激进模式下两次AI思考之间的最小间隔（秒），防抖+限流
+    val aggressiveMinIntervalSeconds: Int = 60,
 )

@@ -162,6 +162,13 @@ dependencies {
     implementation(libs.termux.terminal.view)
     implementation(libs.guava.listenablefuture)
 
+    // Workflow feature: cron parsing + geofence triggers
+    implementation("com.cronutils:cron-utils:9.2.1")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    // SSH feature: JSch (mwiede fork) for remote shell + SFTP
+    implementation("com.github.mwiede:jsch:0.2.21")
+
     // Compose
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))

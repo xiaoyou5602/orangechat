@@ -93,9 +93,40 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("allow_skip_reply")
     data object AllowSkipReply : LocalToolOption()
+
+    /**
+     * 工作流 (Tasker 风格自动化). 开启后向 AI 注册 7 个 workflow_* 工具,
+     * AI 可创建/管理事件驱动的工作流 (触发器 + 条件 -> 动作).
+     */
+    @Serializable
+    @SerialName("workflows")
+    data object Workflows : LocalToolOption()
+
+    /**
+     * 屏幕自动化. 开启后注册 tap/long_press/swipe/scroll/read_window_tree/find_node/
+     * click_node/set_text/global_action/take_screenshot 等无障碍服务工具, AI 可控制屏幕.
+     * 需用户在系统设置->无障碍中启用橘瓣.
+     */
+    @Serializable
+    @SerialName("screen_automation")
+    data object ScreenAutomation : LocalToolOption()
+
+    /**
+     * SSH 远程连接. 开启后注册 ssh_exec/ssh_exec_saved/save_ssh_host/list_ssh_hosts/
+     * delete_ssh_host/ssh_upload/ssh_download/ssh_forget_host_key 工具, AI 可远程执行命令和传文件.
+     */
+    @Serializable
+    @SerialName("ssh")
+    data object Ssh : LocalToolOption()
 }
  
-class LocalTools(private val context: Context, private val eventBus: AppEventBus) {
+class LocalTools(
+    private val context: Context,
+    private val eventBus: AppEventBus,
+    private val workflowRepository: me.rerere.rikkahub.workflow.repository.WorkflowRepository,
+    private val workflowEngine: me.rerere.rikkahub.workflow.execution.WorkflowEngine,
+    private val sshHostRepository: me.rerere.rikkahub.data.repository.SshHostRepository,
+) {
     val javascriptTool by lazy {
         Tool(
             name = "eval_javascript",
@@ -402,12 +433,13 @@ class LocalTools(private val context: Context, private val eventBus: AppEventBus
     val webFetchTool by lazy {
         Tool(
             name = "web_fetch",
-            description = "Fetch the content of a web page. Returns the raw HTML or text content. Useful for reading articles, API endpoints, or scraping data. Supports timeout and max length limits.",
+            description = "Fetch the content of a web page and return clean readable text. Automatically strips HTML tags, scripts, styles and extracts the main text content. Useful for reading articles, news, documentation, or any web page. Supports timeout and max length limits.",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
                         put("url", buildJsonObject { put("type", "string"); put("description", "URL to fetch") })
                         put("max_length", buildJsonObject { put("type", "integer"); put("description", "Max content length in chars (default 10000)") })
+                        put("raw", buildJsonObject { put("type", "boolean"); put("description", "If true, return raw HTML instead of cleaned text (default false)") })
                     },
                     required = listOf("url")
                 )
@@ -415,22 +447,26 @@ class LocalTools(private val context: Context, private val eventBus: AppEventBus
             execute = {
                 val url = it.jsonObject["url"]?.jsonPrimitive?.contentOrNull ?: error("url is required")
                 val maxLen = it.jsonObject["max_length"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 10000
+                val raw = it.jsonObject["raw"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
                 try {
                     val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
                     connection.requestMethod = "GET"
                     connection.connectTimeout = 15000
                     connection.readTimeout = 15000
                     connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Android; AI Assistant)")
+                    connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml,text/plain,application/json,*/*")
+                    connection.instanceFollowRedirects = true
                     val code = connection.responseCode
                     val body = if (code in 200..299) {
                         connection.inputStream.bufferedReader().use { it.readText() }
                     } else {
                         connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
                     }
-                    val truncated = if (body.length > maxLen) body.take(maxLen) + "...[truncated]" else body
+                    val content = if (raw || !body.contains("<")) body else HtmlToText.convert(body)
+                    val truncated = if (content.length > maxLen) content.take(maxLen) + "...[truncated]" else content
                     listOf(UIMessagePart.Text(buildJsonObject {
                         put("success", code in 200..299); put("status_code", code); put("url", url)
-                        put("content", truncated); put("content_length", body.length)
+                        put("content", truncated); put("content_length", content.length)
                     }.toString()))
                 } catch (e: Exception) {
                     listOf(UIMessagePart.Text(buildJsonObject { put("success", false); put("error", e.message ?: "") }.toString()))
@@ -492,7 +528,45 @@ class LocalTools(private val context: Context, private val eventBus: AppEventBus
     fun getTools(
         options: List<LocalToolOption>,
         conversationId: String? = null,
+    ): List<Tool> = buildTools(options, conversationId, ToolInvocationContext.EMPTY)
+
+    /**
+     * 工具调用上下文重载 - 供工作流引擎等无头调用方使用. 在基础工具之上额外注册
+     * workflow_* 工具 (当助手开启了 Workflows 选项时), 以便 AI 能创建/管理工作流.
+     */
+    fun getTools(
+        options: List<LocalToolOption>,
+        invocationContext: ToolInvocationContext,
     ): List<Tool> {
+        val tools = buildTools(options, invocationContext.callerConversationId, invocationContext)
+        if (options.contains(LocalToolOption.Workflows)) {
+            // knownToolNamesProvider 返回空集 = 跳过创建时的工具名校验, 改在触发时由
+            // ToolSurfaceBuilder 构建的完整工具面 (含 system/MCP/plugin) 校验. 这样 AI
+            // 能在动作里引用 post_notification/set_torch/mcp_*/plg_* 等非本地工具.
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowCreateTool(
+                workflowRepository,
+                knownToolNamesProvider = { emptyList() },
+                callerContext = invocationContext,
+            ))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowListTool(workflowRepository))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowGetTool(workflowRepository))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowUpdateTool(
+                workflowRepository,
+                knownToolNamesProvider = { emptyList() },
+                callerContext = invocationContext,
+            ))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowDeleteTool(workflowRepository))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowSetEnabledTool(workflowRepository))
+            tools.add(me.rerere.rikkahub.workflow.tools.workflowRunTool(workflowEngine, workflowRepository))
+        }
+        return tools
+    }
+
+    private fun buildTools(
+        options: List<LocalToolOption>,
+        conversationId: String? = null,
+        invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY,
+    ): MutableList<Tool> {
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) {
             tools.add(javascriptTool)
@@ -521,6 +595,29 @@ class LocalTools(private val context: Context, private val eventBus: AppEventBus
         }
         if (options.contains(LocalToolOption.ListZipContents)) {
             tools.add(listZipContentsTool)
+        }
+        if (options.contains(LocalToolOption.ScreenAutomation)) {
+            // 屏幕自动化工具 - 需无障碍服务. wake_screen 已由 SystemTools 提供, 不重复注册.
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.tapTool(invocationContext))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.longPressTool(invocationContext))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.swipeTool(invocationContext))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.readWindowTreeTool(invocationContext))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.findNodeTool(invocationContext))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.clickNodeTool(invocationContext))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.setTextTool(invocationContext))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.scrollTool(invocationContext))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.globalActionTool(invocationContext))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.takeScreenshotTool(context))
+        }
+        if (options.contains(LocalToolOption.Ssh)) {
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.sshExecTool(context))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.saveSshHostTool(sshHostRepository))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.listSshHostsTool(sshHostRepository))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.deleteSshHostTool(sshHostRepository))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.sshExecSavedTool(context, sshHostRepository))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.sshUploadTool(context, sshHostRepository))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.sshDownloadTool(context, sshHostRepository))
+            tools.add(me.rerere.rikkahub.data.ai.tools.local.forgetSshHostKeyTool(context))
         }
         return tools
     }

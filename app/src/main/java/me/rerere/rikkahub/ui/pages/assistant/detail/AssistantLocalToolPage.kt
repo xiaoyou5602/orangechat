@@ -196,6 +196,57 @@ private fun AssistantLocalToolContent(
                     )
                 }
             )
+            item(
+                headlineContent = { Text("工作流") },
+                supportingContent = { Text("开启后 AI 可创建事件驱动的自动化工作流（触发器+条件->动作）") },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.Workflows),
+                        onCheckedChange = {
+                            val newLocalTools = if (it) {
+                                assistant.localTools + LocalToolOption.Workflows
+                            } else {
+                                assistant.localTools - LocalToolOption.Workflows
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
+            item(
+                headlineContent = { Text("屏幕自动化") },
+                supportingContent = { Text("点击/滑动/输入/读取界面元素/截图。需在系统设置->无障碍中启用橘瓣") },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.ScreenAutomation),
+                        onCheckedChange = {
+                            val newLocalTools = if (it) {
+                                assistant.localTools + LocalToolOption.ScreenAutomation
+                            } else {
+                                assistant.localTools - LocalToolOption.ScreenAutomation
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
+            item(
+                headlineContent = { Text("SSH 远程连接") },
+                supportingContent = { Text("远程执行命令、SFTP 上传下载、保存主机凭据") },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.Ssh),
+                        onCheckedChange = {
+                            val newLocalTools = if (it) {
+                                assistant.localTools + LocalToolOption.Ssh
+                            } else {
+                                assistant.localTools - LocalToolOption.Ssh
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
         }
     }
 }

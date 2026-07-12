@@ -30,6 +30,7 @@ sealed class SystemToolOption {
     @Serializable @SerialName("explore_nearby") data object ExploreNearby : SystemToolOption()
     @Serializable @SerialName("gadgetbridge") data object Gadgetbridge : SystemToolOption()
     @Serializable @SerialName("alarm") data object Alarm : SystemToolOption()
+    @Serializable @SerialName("timer") data object Timer : SystemToolOption()
     @Serializable @SerialName("battery") data object Battery : SystemToolOption()
     @Serializable @SerialName("music") data object Music : SystemToolOption()
     @Serializable @SerialName("sms") data object Sms : SystemToolOption()
@@ -47,6 +48,7 @@ sealed class SystemToolOption {
     @Serializable @SerialName("scan_media") data object ScanMedia : SystemToolOption()
     @Serializable @SerialName("post_notification") data object PostNotification : SystemToolOption()
     @Serializable @SerialName("storage_info") data object StorageInfo : SystemToolOption()
+    @Serializable @SerialName("app_switch") data object AppSwitch : SystemToolOption()
 }
 
 class SystemTools(private val context: Context, private val settings: Settings) {
@@ -346,6 +348,7 @@ class SystemTools(private val context: Context, private val settings: Settings) 
     private val cameraTool by lazy { createCameraTool(context) }
     private val gadgetbridgeTool by lazy { createGadgetbridgeTool(settings.systemToolsSetting.gadgetbridgeDbPath) }
     private val alarmTool by lazy { createAlarmTool(context) }
+    private val timerTool by lazy { createTimerTool(context) }
     private val batteryTool by lazy { createBatteryTool(context) }
     private val musicTool by lazy { createMusicTool(context) }
     private val smsTool by lazy { createSmsTool(context) }
@@ -365,6 +368,7 @@ class SystemTools(private val context: Context, private val settings: Settings) 
     private val mediaScannerTool by lazy { createMediaScannerTool(context) }
     private val notificationPostTool by lazy { createNotificationPostTool(context) }
     private val storageInfoTool by lazy { createStorageInfoTool(context) }
+    private val appSwitchTool by lazy { createAppSwitchTool(context) }
 
     // ==================== 获取工具列表 ====================
 
@@ -381,6 +385,7 @@ class SystemTools(private val context: Context, private val settings: Settings) 
         if (SystemToolOption.Camera in enabledTools) tools.add(cameraTool)
         if (SystemToolOption.Gadgetbridge in enabledTools) tools.add(gadgetbridgeTool)
         if (SystemToolOption.Alarm in enabledTools) tools.add(alarmTool)
+        if (SystemToolOption.Timer in enabledTools) tools.add(timerTool)
         if (SystemToolOption.Battery in enabledTools) tools.add(batteryTool)
         if (SystemToolOption.Music in enabledTools) tools.add(musicTool)
         if (SystemToolOption.Sms in enabledTools) tools.add(smsTool)
@@ -404,6 +409,7 @@ class SystemTools(private val context: Context, private val settings: Settings) 
         if (SystemToolOption.ScanMedia in enabledTools) tools.add(mediaScannerTool)
         if (SystemToolOption.PostNotification in enabledTools) tools.add(notificationPostTool)
         if (SystemToolOption.StorageInfo in enabledTools) tools.add(storageInfoTool)
+        if (SystemToolOption.AppSwitch in enabledTools) tools.add(appSwitchTool)
         return tools
     }
 }

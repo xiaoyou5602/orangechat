@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import me.rerere.asr.ASRController
 import me.rerere.asr.ASRProviderSetting
 import me.rerere.asr.ASRState
+import me.rerere.asr.providers.MiMoASRController
 import me.rerere.asr.providers.OpenAIRealtimeASRController
 import me.rerere.asr.providers.SiliconFlowASRController
 import me.rerere.asr.providers.VolcengineASRController
@@ -198,6 +199,14 @@ internal class CustomAsrStateImpl(
                         return null
                     }
                     VolcengineASRController(context, httpClient, provider)
+                }
+
+                is ASRProviderSetting.MiMo -> {
+                    if (provider.apiKey.isBlank()) {
+                        Log.w(ASR_TAG, "createController: MiMo apiKey 为空")
+                        return null
+                    }
+                    MiMoASRController(context, httpClient, provider)
                 }
             }
         } catch (e: Exception) {

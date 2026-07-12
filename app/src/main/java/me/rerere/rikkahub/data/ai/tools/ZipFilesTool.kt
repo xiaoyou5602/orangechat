@@ -11,29 +11,38 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 文件缓存：存储最近一次 write_files 工具调用的文件内容
+ * 文件缓存：按 conversationId 隔离，存储最近一次 write_files 工具调用的文件内容
  * 用于后续的增量修改（edits）模式
+ * 修复：之前是全局单例，不同对话之间会互相串文件
  */
 object WriteFilesCache {
-    private val cache = mutableMapOf<String, String>()
+    private val caches = ConcurrentHashMap<String, MutableMap<String, String>>()
 
-    fun get(name: String): String? = cache[name]
+    fun get(conversationId: String, name: String): String? =
+        caches[conversationId]?.get(name)
 
-    fun put(name: String, content: String) {
-        cache[name] = content
+    fun put(conversationId: String, name: String, content: String) {
+        caches.computeIfAbsent(conversationId) { ConcurrentHashMap() }[name] = content
     }
 
-    fun getAll(): Map<String, String> = cache.toMap()
+    fun getAll(conversationId: String): Map<String, String> =
+        caches[conversationId]?.toMap() ?: emptyMap()
 
-    fun clear() {
-        cache.clear()
+    fun clear(conversationId: String) {
+        caches.remove(conversationId)
     }
 
-    fun updateAll(files: Map<String, String>) {
-        cache.clear()
-        cache.putAll(files)
+    fun clearAll() {
+        caches.clear()
+    }
+
+    fun updateAll(conversationId: String, files: Map<String, String>) {
+        val map = caches.computeIfAbsent(conversationId) { ConcurrentHashMap() }
+        map.clear()
+        map.putAll(files)
     }
 }
 
@@ -43,8 +52,10 @@ object WriteFilesCache {
  * 支持两种模式：
  * 1. 完整写入模式：传入 files 数组，每个文件包含完整内容
  * 2. 增量修改模式：传入 edits 数组，对已缓存文件进行 search/replace 修改
+ *
+ * conversationId: 用于隔离不同对话的文件缓存，防止串文件
  */
-fun buildWriteFilesTool(): Tool = Tool(
+fun buildWriteFilesTool(conversationId: String? = null): Tool = Tool(
     name = "write_files",
     description = """
         Package files into a ZIP archive for the user to download.
@@ -60,7 +71,7 @@ fun buildWriteFilesTool(): Tool = Tool(
         - `search` must be an EXACT match of the text to replace (copy it verbatim from the original)
         - You can apply multiple edits to the same file
         - Files not mentioned in `edits` keep their cached content unchanged
-        - If `search` is not found, that edit fails but other edits still apply
+        - If `search` is not found, the entire tool call FAILS with an error. Double-check your search text matches the original exactly.
         - If you need to add a new file not in the cache, include it in the `files` array alongside `edits`
 
         IMPORTANT: Always use actual filenames as code block language tags. For example:
@@ -102,7 +113,7 @@ fun buildWriteFilesTool(): Tool = Tool(
                 })
                 put("edits", buildJsonObject {
                     put("type", "array")
-                    put("description", "List of search/replace edits to apply to cached files. Each edit has 'name' (filename to edit), 'search' (exact text to find), and 'replace' (replacement text). Multiple edits can target the same file and are applied in order.")
+                    put("description", "List of search/replace edits to apply to cached files. Each edit has 'name' (filename to edit), 'search' (exact text to find), and 'replace' (replacement text). Multiple edits can target the same file and are applied in order. If any search text is not found, the ENTIRE tool call fails with an error.")
                     put("items", buildJsonObject {
                         put("type", "object")
                         put("properties", buildJsonObject {
@@ -112,7 +123,7 @@ fun buildWriteFilesTool(): Tool = Tool(
                             })
                             put("search", buildJsonObject {
                                 put("type", "string")
-                                put("description", "The exact text to find in the file. Must be a verbatim copy of the original text. Will be replaced with the 'replace' value.")
+                                put("description", "The exact text to find in the file. Must be a verbatim copy of the original text. Will be replaced with the 'replace' value. If not found, the tool call FAILS.")
                             })
                             put("replace", buildJsonObject {
                                 put("type", "string")
@@ -139,6 +150,7 @@ fun buildWriteFilesTool(): Tool = Tool(
             error("zip_name must end with .zip")
         }
 
+        val convId = conversationId ?: "default"
         val filesParam = params["files"]?.jsonArray
         val editsParam = params["edits"]?.jsonArray
         val baseFiles = params["base_files"]?.jsonPrimitive?.contentOrNull
@@ -161,13 +173,13 @@ fun buildWriteFilesTool(): Tool = Tool(
 
         // Mode 2: Incremental edit - start from cached files
         if (baseFiles == "previous") {
-            val cached = WriteFilesCache.getAll()
+            val cached = WriteFilesCache.getAll(convId)
             if (cached.isEmpty()) {
                 error("No previously cached files found. Use 'files' parameter for the first call.")
             }
             finalFiles.putAll(cached)
 
-            // Apply edits
+            // Apply edits - 如果任何一个 search 找不到，整个工具调用失败
             if (editsParam != null) {
                 val editResults = mutableListOf<Map<String, String>>()
                 editsParam.forEach { editElement ->
@@ -181,17 +193,11 @@ fun buildWriteFilesTool(): Tool = Tool(
 
                     val currentContent = finalFiles[name]
                     if (currentContent == null) {
-                        editResults.add(mapOf(
-                            "name" to name,
-                            "status" to "skipped",
-                            "reason" to "file not found in cache"
-                        ))
+                        // 明确报错：文件不存在
+                        error("Edit failed: file '$name' not found in cached files. Available files: ${finalFiles.keys.joinToString(", ")}")
                     } else if (!currentContent.contains(search)) {
-                        editResults.add(mapOf(
-                            "name" to name,
-                            "status" to "not_found",
-                            "reason" to "search text not found in file"
-                        ))
+                        // 明确报错：search 文本未找到
+                        error("Edit failed: search text not found in file '$name'. Make sure your search text is an EXACT verbatim copy of the original. Search text was: ${search.take(100)}${if (search.length > 100) "..." else ""}")
                     } else {
                         finalFiles[name] = currentContent.replace(search, replace)
                         editResults.add(mapOf(
@@ -217,8 +223,8 @@ fun buildWriteFilesTool(): Tool = Tool(
             error("No files to package. Provide 'files' array or use 'base_files':'previous' with 'edits'.")
         }
 
-        // Update cache with the final file contents
-        WriteFilesCache.updateAll(finalFiles)
+        // Update cache with the final file contents (按 conversationId 隔离)
+        WriteFilesCache.updateAll(convId, finalFiles)
 
         listOf(
             UIMessagePart.Text(
@@ -234,6 +240,12 @@ fun buildWriteFilesTool(): Tool = Tool(
                             })
                         }
                     })
+                    // 包含完整文件内容，UI 下载时直接从这里读取，不再猜数据源
+                    put("files_content", buildJsonObject {
+                        finalFiles.forEach { (name, content) ->
+                            put(name, content)
+                        }
+                    })
                     put("total_files", finalFiles.size)
                     put("message", "ZIP package '$zipName' is ready with ${finalFiles.size} file(s). A download button will appear for the user.")
                 }.toString()
@@ -243,5 +255,5 @@ fun buildWriteFilesTool(): Tool = Tool(
 )
 
 // Keep backward compatibility alias
-@Deprecated("Use buildWriteFilesTool instead", ReplaceWith("buildWriteFilesTool()"))
-fun buildZipFilesTool(): Tool = buildWriteFilesTool()
+@Deprecated("Use buildWriteFilesTool with conversationId instead", ReplaceWith("buildWriteFilesTool(conversationId)"))
+fun buildWriteFilesTool(): Tool = buildWriteFilesTool(null)

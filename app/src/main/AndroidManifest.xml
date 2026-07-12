@@ -214,32 +214,22 @@
         android:value="device boot/screen event tracking for supabase sync" />
     </service>
 
+    <!-- Device Event AI Trigger Service (aggressive mode: triggers AI thinking on app switch/screen on-off) -->
+    <service
+      android:name=".data.service.DeviceEventAiTriggerService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="device event ai trigger for proactive messaging" />
+    </service>
+
     <!-- Supabase Sync Receiver -->
     <receiver
       android:name=".data.service.SupabaseSyncReceiver"
       android:exported="true">
       <intent-filter>
         <action android:name="me.rerere.rikkahub.SUPABASE_SYNC" />
-        <action android:name="android.intent.action.BOOT_COMPLETED" />
-      </intent-filter>
-    </receiver>
-
-    <!-- Gateway Poll Service (橘瓣定时主动 poll 云端网关，决定是否该主动说话) -->
-    <service
-      android:name=".data.service.GatewayPollService"
-      android:exported="false"
-      android:foregroundServiceType="specialUse">
-      <property
-        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-        android:value="gateway proactive poll" />
-    </service>
-
-    <!-- Gateway Poll Receiver (handles gateway_poll alarm and boot completed) -->
-    <receiver
-      android:name=".data.service.GatewayPollReceiver"
-      android:exported="true">
-      <intent-filter>
-        <action android:name="me.rerere.rikkahub.GATEWAY_POLL" />
         <action android:name="android.intent.action.BOOT_COMPLETED" />
       </intent-filter>
     </receiver>
@@ -273,6 +263,36 @@
         <action android:name="android.intent.action.BOOT_COMPLETED" />
       </intent-filter>
     </receiver>
+
+    <!-- Workflow: boot-completed trigger receiver -->
+    <receiver
+      android:name=".workflow.trigger.WorkflowBootReceiver"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+        <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+      </intent-filter>
+    </receiver>
+
+    <!-- Workflow: geofence transition receiver (driven by Play Services PendingIntent) -->
+    <receiver
+      android:name=".workflow.trigger.GeofenceTriggerReceiver"
+      android:exported="false" />
+
+    <!-- Screen automation: accessibility service for tap/swipe/read window tree/screenshot -->
+    <service
+      android:name=".service.RikkaAccessibilityService"
+      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+      android:exported="true"
+      android:label="@string/app_name">
+      <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+      </intent-filter>
+      <meta-data
+        android:name="android.accessibilityservice"
+        android:resource="@xml/accessibility_service_config" />
+    </service>
 
     <!-- Diary Summary Trigger Service -->
     <service

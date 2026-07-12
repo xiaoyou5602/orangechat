@@ -128,7 +128,6 @@ import me.rerere.rikkahub.ui.pages.setting.SettingSpeechPage
 import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSystemToolsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProactiveMessagePage
-import me.rerere.rikkahub.ui.pages.setting.SettingGatewayPollPage
 import me.rerere.rikkahub.plugin.webview.PluginWebViewPage
 import me.rerere.rikkahub.ui.pages.memory.MemoryBankPage
 import me.rerere.rikkahub.ui.components.ui.EmojiPickerPage
@@ -590,8 +589,12 @@ class RouteActivity : ComponentActivity() {
                                 SettingProactiveMessagePage()
                             }
 
-                            entry<Screen.SettingGatewayPoll> {
-                                SettingGatewayPollPage()
+                            entry<Screen.Workflows> {
+                                me.rerere.rikkahub.workflow.ui.WorkflowsScreen()
+                            }
+
+                            entry<Screen.WorkflowDetail> { key ->
+                                me.rerere.rikkahub.workflow.ui.WorkflowDetailScreen(key.id)
                             }
 
                             entry<Screen.SettingPlugins> {
@@ -916,13 +919,16 @@ sealed interface Screen : NavKey {
     data object SettingProactiveMessage : Screen
 
     @Serializable
-    data object SettingGatewayPoll : Screen
-
-    @Serializable
     data object Health : Screen
 
     @Serializable
     data object SettingPlugins : Screen
+
+    @Serializable
+    data object Workflows : Screen
+
+    @Serializable
+    data class WorkflowDetail(val id: String) : Screen
 
     @Serializable
     data class PluginDetail(val pluginId: String) : Screen

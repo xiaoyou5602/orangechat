@@ -23,7 +23,13 @@ import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.db.entity.MemoryBankEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
+import me.rerere.rikkahub.data.db.entity.SshHostEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkahub.data.db.dao.SshHostDao
+import me.rerere.rikkahub.workflow.db.WorkflowDao
+import me.rerere.rikkahub.workflow.db.WorkflowEntity
+import me.rerere.rikkahub.workflow.db.WorkflowRunDao
+import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
 import me.rerere.rikkahub.data.db.migrations.Migration_16_17
 import me.rerere.rikkahub.data.db.migrations.Migration_24_25
 import me.rerere.rikkahub.data.db.migrations.Migration_8_9
@@ -40,8 +46,11 @@ import me.rerere.rikkahub.utils.JsonInstant
         MemoryBankEntity::class,
         WorkspaceEntity::class,
         FolderEntity::class,
+        WorkflowEntity::class,
+        WorkflowRunEntity::class,
+        SshHostEntity::class,
     ],
-    version = 26,
+    version = 28,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -57,6 +66,8 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutoMigration(from = 17, to = 18),
         AutoMigration(from = 18, to = 19),
         AutoMigration(from = 22, to = 23),
+        AutoMigration(from = 26, to = 27),
+        AutoMigration(from = 27, to = 28),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -78,6 +89,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun workspaceDao(): WorkspaceDAO
 
     abstract fun folderDao(): FolderDAO
+
+    abstract fun workflowDao(): WorkflowDao
+
+    abstract fun workflowRunDao(): WorkflowRunDao
+
+    abstract fun sshHostDao(): SshHostDao
 }
 
 object TokenUsageConverter {

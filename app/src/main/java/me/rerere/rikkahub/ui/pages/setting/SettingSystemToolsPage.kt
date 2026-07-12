@@ -624,6 +624,32 @@ fun SettingSystemToolsPage(vm: SettingVM = koinViewModel()) {
                     }
                 }
             }
+            // 设定定时器
+            item {
+                CardGroup(
+                    title = { Text("设定定时器") },
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                ) {
+                    item(
+                        leadingContent = { Icon(imageVector = HugeIcons.Watch01, contentDescription = null) },
+                        headlineContent = { Text("启用定时器工具") },
+                        supportingContent = { Text("允许AI通过系统时钟应用为您设置倒计时定时器") },
+                        trailingContent = {
+                            Switch(
+                                checked = systemToolsSetting.timerEnabled,
+                                onCheckedChange = { enabled -> updateSystemToolsSetting(systemToolsSetting.copy(timerEnabled = enabled)) }
+                            )
+                        }
+                    )
+                    if (systemToolsSetting.timerEnabled) {
+                        item(
+                            headlineContent = { Text("说明") },
+                            supportingContent = { Text("AI 可以设置倒计时定时器，可指定秒数和标签。定时器通过系统时钟应用设置。") }
+                        )
+                    }
+                }
+            }
+
             // 电量信息
             item {
                 CardGroup(
@@ -1033,6 +1059,23 @@ fun SettingSystemToolsPage(vm: SettingVM = koinViewModel()) {
                             Switch(
                                 checked = systemToolsSetting.storageInfoEnabled,
                                 onCheckedChange = { enabled -> updateSystemToolsSetting(systemToolsSetting.copy(storageInfoEnabled = enabled)) }
+                            )
+                        }
+                    )
+                }
+            }
+
+            // 应用切换
+            item {
+                CardGroup(title = { Text("应用切换") }, modifier = Modifier.padding(horizontal = 8.dp)) {
+                    item(
+                        leadingContent = { Icon(imageVector = HugeIcons.SmartPhone01, contentDescription = null) },
+                        headlineContent = { Text("启用应用切换工具") },
+                        supportingContent = { Text("允许 AI 启动其他应用、把橘瓣拉到前台、或用浏览器打开 URL") },
+                        trailingContent = {
+                            Switch(
+                                checked = systemToolsSetting.appSwitchEnabled,
+                                onCheckedChange = { enabled -> updateSystemToolsSetting(systemToolsSetting.copy(appSwitchEnabled = enabled)) }
                             )
                         }
                     )

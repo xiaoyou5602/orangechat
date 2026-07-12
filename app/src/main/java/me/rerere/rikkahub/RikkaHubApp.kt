@@ -32,11 +32,11 @@ import me.rerere.rikkahub.plugin.di.pluginModule
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.service.DailySummaryService
+import me.rerere.rikkahub.data.service.DeviceEventAiTriggerService
 import me.rerere.rikkahub.data.service.DeviceEventTrackingService
 import me.rerere.rikkahub.data.service.DiarySummaryService
 import me.rerere.rikkahub.data.service.ProactiveMessageService
 import me.rerere.rikkahub.data.service.SupabaseSyncService
-import me.rerere.rikkahub.data.service.GatewayPollService
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.WebServerService
 import me.rerere.rikkahub.utils.CrashHandler
@@ -122,11 +122,17 @@ class RikkaHubApp : Application() {
         // Reschedule Supabase sync alarm if enabled
         rescheduleSupabaseSyncIfEnabled()
 
-        // Reschedule gateway poll alarm if enabled (橘瓣定时主动 poll 云端网关)
-        rescheduleGatewayPollIfEnabled()
-
         // Start device event tracking (screen on/off realtime listener) if enabled
         startDeviceEventTrackingIfEnabled()
+
+        // Start workflow trigger registry (event-driven automation)
+        startWorkflowTriggers()
+
+        // Start network change monitor (invalidates SSH DNS cache on WiFi<->cell handoff)
+        startNetworkChangeMonitor()
+
+        // Start aggressive mode (device event AI trigger) if enabled
+        startAggressiveModeIfEnabled()
 
         // Reschedule daily_cron alarm if plugins need it
         rescheduleDailyCronIfEnabled()
@@ -190,15 +196,38 @@ class RikkaHubApp : Application() {
         SupabaseSyncService.rescheduleIfEnabled(this)
     }
 
-    private fun rescheduleGatewayPollIfEnabled() {
-        GatewayPollService.rescheduleIfEnabled(this)
-    }
-
     private fun startDeviceEventTrackingIfEnabled() {
         runCatching {
             DeviceEventTrackingService.startIfEnabled(this)
         }.onFailure {
             Log.e(TAG, "startDeviceEventTrackingIfEnabled failed", it)
+        }
+    }
+
+    private fun startWorkflowTriggers() {
+        runCatching {
+            val registry = get<me.rerere.rikkahub.workflow.trigger.TriggerRegistry>()
+            val engine = get<me.rerere.rikkahub.workflow.execution.WorkflowEngine>()
+            registry.setEngineCallback(engine.triggerCallback)
+            registry.start()
+        }.onFailure {
+            Log.e(TAG, "startWorkflowTriggers failed", it)
+        }
+    }
+
+    private fun startNetworkChangeMonitor() {
+        runCatching {
+            me.rerere.rikkahub.utils.NetworkChangeMonitor.start(this)
+        }.onFailure {
+            Log.e(TAG, "startNetworkChangeMonitor failed", it)
+        }
+    }
+
+    private fun startAggressiveModeIfEnabled() {
+        runCatching {
+            DeviceEventAiTriggerService.startIfEnabled(this)
+        }.onFailure {
+            Log.e(TAG, "startAggressiveModeIfEnabled failed", it)
         }
     }
 

@@ -264,10 +264,10 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text("主动消息") },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.SettingGatewayPoll) },
-                        leadingContent = { Icon(HugeIcons.CloudServer, null) },
-                        supportingContent = { Text("橘瓣定时主动向云端网关查询是否该说话（绕开内网穿透）") },
-                        headlineContent = { Text("网关轮询") },
+                        onClick = { navController.navigate(Screen.Workflows) },
+                        leadingContent = { Icon(HugeIcons.SmartPhone01, null) },
+                        supportingContent = { Text("Tasker 风格自动化：触发器 + 条件 -> 执行动作，由 AI 编写") },
+                        headlineContent = { Text("工作流") },
                     )
                     item(
                         onClick = { navController.navigate(Screen.Health) },

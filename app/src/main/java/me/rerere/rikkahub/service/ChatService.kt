@@ -388,23 +388,22 @@ class ChatService(
     fun sendMessage(conversationId: Uuid, content: List<UIMessagePart>, answer: Boolean = true) {
         if (content.isEmptyInputMessage()) return
 
-        // 用户发送消息时重置主动消息计时器
-        try {
-            val settings = runBlocking { settingsStore.settingsFlow.first() }
-            val proactiveSetting = settings.proactiveMessageSetting
-            if (proactiveSetting.enabled) {
-                me.rerere.rikkahub.data.service.ProactiveMessageService.resetTimer(context, proactiveSetting)
-            }
-        } catch (e: Exception) {
-            android.util.Log.w("ChatService", "Failed to reset proactive timer", e)
-        }
-
         val session = getOrCreateSession(conversationId)
         session.getJob()?.cancel()
 
         val job = appScope.launch {
             try {
                 val settings = settingsStore.settingsFlow.first()
+
+                // 用户发送消息时重置主动消息计时器（异步执行，不阻塞发消息主流程）
+                try {
+                    val proactiveSetting = settings.proactiveMessageSetting
+                    if (proactiveSetting.enabled) {
+                        me.rerere.rikkahub.data.service.ProactiveMessageService.resetTimer(context, proactiveSetting)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("ChatService", "Failed to reset proactive timer", e)
+                }
 
                 // 读取最新状态 -> 追加用户消息 -> 落库，整体加锁。
                 // 防止跟同一时刻可能在跑的标题生成/建议生成/语音通话挂断反馈互相覆盖对方刚写入的消息。
@@ -861,7 +860,10 @@ class ChatService(
                     if (settings.enableWebSearch) {
                         addAll(createSearchTools(settings))
                     }
-addAll(localTools.getTools(assistant.localTools, conversationId.toString()))
+addAll(localTools.getTools(assistant.localTools, me.rerere.rikkahub.data.ai.tools.ToolInvocationContext(
+    callerAssistantId = assistant.id.toString(),
+    callerConversationId = conversationId.toString(),
+)))
                     // System tools (location, notifications, calendar, alarm, camera)
                     val systemToolsOptions = settings.systemToolsSetting.getEnabledOptions()
                     if (systemToolsOptions.isNotEmpty()) {
@@ -895,6 +897,7 @@ addAll(localTools.getTools(assistant.localTools, conversationId.toString()))
                     addAll(pluginToolProvider.getTools())
                 },
                 pluginPromptInjections = pluginToolProvider.getPluginPromptInjections(),
+                conversationId = conversationId.toString(),
             ).onCompletion {
                 // 取消 Live Update 通知
                 cancelLiveUpdateNotification(conversationId)
@@ -948,6 +951,53 @@ addAll(localTools.getTools(assistant.localTools, conversationId.toString()))
                 launchNeteaseCloudMusic(messageText)
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to launch NetEase Cloud Music", e)
+            }
+
+            // 检测并执行 [JUMP] 标记 - 正常聊天中的切屏（AI总是可以跳转，不需要开关）
+            try {
+                val lastAssistantMessage = finalConversation.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                val rawText = lastAssistantMessage?.parts?.filterIsInstance<UIMessagePart.Text>()
+                    ?.joinToString("\n") { it.text } ?: ""
+                if (rawText.contains("[JUMP]", ignoreCase = true)) {
+                    // 从展示给用户的消息文本中移除 [JUMP] 标记
+                    val cleanedText = rawText.replace("\\[JUMP]".toRegex(RegexOption.IGNORE_CASE), "").trim()
+                    if (lastAssistantMessage != null && cleanedText != rawText) {
+                        val cleanedMessage = lastAssistantMessage.copy(
+                            parts = lastAssistantMessage.parts.map { part ->
+                                if (part is UIMessagePart.Text) {
+                                    UIMessagePart.Text(part.text.replace("\\[JUMP]".toRegex(RegexOption.IGNORE_CASE), "").trim())
+                                } else {
+                                    part
+                                }
+                            }
+                        )
+                        // 更新对话状态并持久化
+                        val cleanedConversation = finalConversation.copy(
+                            messageNodes = finalConversation.messageNodes.map { node ->
+                                node.copy(
+                                    messages = node.messages.map { msg ->
+                                        if (msg.id == cleanedMessage.id) cleanedMessage else msg
+                                    }
+                                )
+                            }
+                        )
+                        updateConversation(conversationId, cleanedConversation)
+                        saveConversation(conversationId, cleanedConversation)
+                    }
+                    // 拉起 RouteActivity 切屏（正常聊天中不受时间阈值限制）
+                    val jumpIntent = Intent(context, RouteActivity::class.java).apply {
+                        addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        )
+                        putExtra("conversationId", conversationId.toString())
+                    }
+                    context.startActivity(jumpIntent)
+                    Log.d(TAG, "[JUMP] detected in normal chat, force jump to conversation $conversationId")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to handle [JUMP] in normal chat", e)
             }
 
             // 触发 message_received 事件钩子

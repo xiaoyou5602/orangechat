@@ -64,10 +64,16 @@ class RikkaNotificationListenerService : NotificationListenerService() {
     
     override fun onListenerConnected() {
         super.onListenerConnected()
+        me.rerere.rikkahub.data.ai.tools.local.NotificationListenerHandle.connected = true
         // 服务连接时，获取所有活动通知
         refreshNotifications()
     }
-    
+
+    override fun onListenerDisconnected() {
+        me.rerere.rikkahub.data.ai.tools.local.NotificationListenerHandle.connected = false
+        super.onListenerDisconnected()
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         super.onNotificationPosted(sbn)
         addNotification(sbn)
@@ -98,7 +104,13 @@ class RikkaNotificationListenerService : NotificationListenerService() {
     private fun addNotification(sbn: StatusBarNotification) {
         val notification = parseNotification(sbn) ?: return
         val now = System.currentTimeMillis()
-        
+
+        // Dispatch to workflow notification triggers (no-op when no workflow uses them).
+        runCatching {
+            me.rerere.rikkahub.workflow.trigger.NotificationTriggerDispatcher
+                .onPosted(notification.packageName, notification.title, notification.content)
+        }
+
         val currentList = _notifications.value.toMutableList()
         
         // 避免重复

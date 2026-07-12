@@ -451,22 +451,26 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
                         val totalFiles = content.jsonObject.get("total_files")?.jsonPrimitive?.contentOrNull?.toIntOrNull()
                             ?: content.jsonObject.get("files")?.jsonArray?.size ?: 0
 
-                        // Extract file contents: from arguments (full mode) or from cache (edit mode)
-                        val fileContents = remember(arguments) {
-                            val fromArgs = arguments.jsonObject.get("files")?.jsonArray?.mapNotNull { fileElement ->
-                                runCatching {
-                                    val obj = fileElement.jsonObject
-                                    val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                                    val content = obj["content"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                                    name to content
-                                }.getOrNull()
-                            } ?: emptyList()
-
-                            if (fromArgs.isNotEmpty()) {
-                                fromArgs
+                        // 从工具执行结果中读取确切文件内容（不再猜数据源）
+                        // write_files 工具现在在输出 JSON 中包含 files_content 字段
+                        val fileContents = remember(content) {
+                            val filesContentObj = content.jsonObject["files_content"]?.jsonObject
+                            if (filesContentObj != null) {
+                                filesContentObj.entries.mapNotNull { (name, element) ->
+                                    runCatching {
+                                        name to (element as kotlinx.serialization.json.JsonPrimitive).content
+                                    }.getOrNull()
+                                }
                             } else {
-                                // Edit mode: use WriteFilesCache which has the merged files
-                                WriteFilesCache.getAll().toList()
+                                // 向后兼容: 如果工具结果中没有 files_content, 尝试从 arguments 提取 (full write 模式)
+                                arguments.jsonObject.get("files")?.jsonArray?.mapNotNull { fileElement ->
+                                    runCatching {
+                                        val obj = fileElement.jsonObject
+                                        val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                                        val fileContent = obj["content"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                                        name to fileContent
+                                    }.getOrNull()
+                                } ?: emptyList()
                             }
                         }
 

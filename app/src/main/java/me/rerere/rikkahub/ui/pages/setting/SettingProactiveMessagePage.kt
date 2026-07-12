@@ -63,9 +63,15 @@ fun SettingProactiveMessagePage(vm: SettingVM = koinInject()) {
                             Switch(
                                 checked = settings.proactiveMessageSetting.enabled,
                                 onCheckedChange = { enabled ->
-                                    val newSetting = settings.proactiveMessageSetting.copy(enabled = enabled)
+                                    // 互斥：开启主动消息时关闭激进模式
+                                    val newSetting = if (enabled) {
+                                        settings.proactiveMessageSetting.copy(enabled = true, aggressiveModeEnabled = false)
+                                    } else {
+                                        settings.proactiveMessageSetting.copy(enabled = false)
+                                    }
                                     vm.updateSettings(settings.copy(proactiveMessageSetting = newSetting))
                                     if (enabled) {
+                                        me.rerere.rikkahub.data.service.DeviceEventAiTriggerService.stop(context)
                                         ProactiveMessageService.triggerNow(context, newSetting)
                                     } else {
                                         ProactiveMessageService.cancel(context)
@@ -152,60 +158,67 @@ fun SettingProactiveMessagePage(vm: SettingVM = koinInject()) {
                     )
                 }
             }
-            // 跳转时间阈值（仅当 allowForceJump 开启时显示）
-            if (settings.proactiveMessageSetting.allowForceJump) {
-                item {
-                    CardGroup {
+            // 激进模式开关（与主动消息互斥）
+            item {
+                CardGroup {
+                    item(
+                        headlineContent = { Text("激进模式") },
+                        supportingContent = {
+                            Text("开启后，每次手机切换应用、开屏锁屏、回到桌面都会触发 AI 思考。AI 会根据用户的手机动向自主决定是否主动发消息或切屏。\n\n可以独立开启，不需要同时开启主动消息。\n\n这是一个常驻前台服务，会持续小幅耗电。需要开启使用情况访问权限。\n\nAI 大多数时候会选择 [PASS] 跳过，只在觉得有话要说时才会发消息。")
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = settings.proactiveMessageSetting.aggressiveModeEnabled,
+                                onCheckedChange = { enabled ->
+                                    // 互斥：开启激进模式时关闭主动消息
+                                    val newSetting = if (enabled) {
+                                        settings.proactiveMessageSetting.copy(aggressiveModeEnabled = true, enabled = false)
+                                    } else {
+                                        settings.proactiveMessageSetting.copy(aggressiveModeEnabled = false)
+                                    }
+                                    vm.updateSettings(settings.copy(proactiveMessageSetting = newSetting))
+                                    if (enabled) {
+                                        ProactiveMessageService.cancel(context)
+                                        try {
+                                            val intent = android.content.Intent(context, me.rerere.rikkahub.data.service.DeviceEventAiTriggerService::class.java)
+                                            context.startForegroundService(intent)
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("SettingProactiveMessage", "Failed to start aggressive mode service", e)
+                                        }
+                                    } else {
+                                        me.rerere.rikkahub.data.service.DeviceEventAiTriggerService.stop(context)
+                                    }
+                                }
+                            )
+                        }
+                    )
+                    // 最小间隔设置（仅当激进模式开启时显示）
+                    if (settings.proactiveMessageSetting.aggressiveModeEnabled) {
                         item(
-                            headlineContent = { Text("跳转时间阈值 (分钟)") },
+                            headlineContent = { Text("激进模式最小间隔 (秒)") },
                             supportingContent = {
                                 OutlinedTextField(
-                                    value = settings.proactiveMessageSetting.jumpIdleThresholdMinutes.toString(),
+                                    value = settings.proactiveMessageSetting.aggressiveMinIntervalSeconds.toString(),
                                     onValueChange = { value ->
-                                        val minutes = value.toIntOrNull()
-                                        if (minutes != null && minutes > 0) {
+                                        val seconds = value.toIntOrNull()
+                                        if (seconds != null && seconds >= 10) {
                                             vm.updateSettings(
                                                 settings.copy(
                                                     proactiveMessageSetting = settings.proactiveMessageSetting.copy(
-                                                        jumpIdleThresholdMinutes = minutes
+                                                        aggressiveMinIntervalSeconds = seconds
                                                     )
                                                 )
                                             )
                                         }
                                     },
-                                    placeholder = { Text("120") },
+                                    placeholder = { Text("60") },
                                     singleLine = true,
                                     modifier = Modifier.padding(top = 8.dp),
                                 )
-                                Text("用户多久没回复(分钟)时，AI 可以选择跳转屏幕。默认120分钟(2小时)。不到此时间不会跳转。结合AI判断+助手提示词。")
+                                Text("两次 AI 思考之间的最小间隔（秒）。防抖+限流，避免频繁触发浪费 token。最小10秒。")
                             },
                         )
                     }
-                }
-            }
-
-            item {
-                CardGroup {
-                    item(
-                        headlineContent = { Text("允许强制跳转屏幕") },
-                        supportingContent = {
-                            Text("开启后，AI 会根据距离上次聊天的时间、消息重要程度、记忆等综合判断。当判断这条消息需要你立即看到时（如长时间未回复、重要提醒、你在等的内容），会直接把橘瓣聊天界面拉到屏幕最前面，而不只是发通知。\n\nAI 只在必要时才会跳转，一般闲聊不会打扰你。")
-                        },
-                        trailingContent = {
-                            Switch(
-                                checked = settings.proactiveMessageSetting.allowForceJump,
-                                onCheckedChange = { enabled ->
-                                    vm.updateSettings(
-                                        settings.copy(
-                                            proactiveMessageSetting = settings.proactiveMessageSetting.copy(
-                                                allowForceJump = enabled
-                                            )
-                                        )
-                                    )
-                                }
-                            )
-                        }
-                    )
                 }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

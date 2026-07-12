@@ -84,6 +84,7 @@ class GenerationHandler(
         conversationSystemPrompt: String? = null,
         workspaceCwd: String? = null,
         pluginPromptInjections: List<String> = emptyList(),
+        conversationId: String? = null,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -115,7 +116,7 @@ class GenerationHandler(
                     ).let(this::addAll)
                 }
                 // 文件写入工具 - AI可直接将文件内容写入设备或打包ZIP
-                add(buildWriteFilesTool())
+                add(buildWriteFilesTool(conversationId))
                 addAll(tools)
             }
  
@@ -485,6 +486,21 @@ class GenerationHandler(
                     appendLine()
                     appendLine("## Skip Reply")
                     appendLine("If you determine that no reply is needed (e.g., the user's message doesn't require a response, or you have nothing meaningful to add), you may reply with exactly `[SKIP]` (without any other text). This message will be hidden from the user. Use this sparingly and only when truly appropriate.")
+                }
+
+                // 屏幕跳转能力（AI总是可以跳转，不需要开关）
+                if (true) {
+                    appendLine()
+                    appendLine()
+                    appendLine("## 屏幕跳转能力")
+                    appendLine("你可以在回复末尾追加 [JUMP] 标记（单独一行）来把聊天界面拉到用户屏幕最前面。")
+                    appendLine("适用场景：")
+                    appendLine("- 用户说要去别的应用，你觉得需要把用户拉回来时")
+                    appendLine("- 你觉得接下来的内容需要用户立即看到时")
+                    appendLine("不适用场景：")
+                    appendLine("- 一般闲聊不需要跳转")
+                    appendLine("- 用户正在跟你正常对话时不需要跳转")
+                    appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
                 }
  
                 // 分气泡: 告知模型它自己能控制消息如何被拆成多个气泡

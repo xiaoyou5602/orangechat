@@ -48,6 +48,9 @@ data class SystemToolsSetting(
     // Feature 15: Alarm
     val alarmEnabled: Boolean = false,
 
+    // Feature 18: Timer
+    val timerEnabled: Boolean = false,
+
     // Feature 16: Battery info
     val batteryEnabled: Boolean = false,
 
@@ -73,6 +76,7 @@ data class SystemToolsSetting(
     val scanMediaEnabled: Boolean = false,
     val postNotificationEnabled: Boolean = false,
     val storageInfoEnabled: Boolean = false,
+    val appSwitchEnabled: Boolean = false,
 ) {
     fun getEnabledOptions(): Set<me.rerere.rikkahub.data.ai.tools.SystemToolOption> {
         val options = mutableSetOf<me.rerere.rikkahub.data.ai.tools.SystemToolOption>()
@@ -83,6 +87,7 @@ data class SystemToolsSetting(
         if (locationExploreEnabled) options.add(me.rerere.rikkahub.data.ai.tools.SystemToolOption.ExploreNearby)
         if (gadgetbridgeEnabled) options.add(me.rerere.rikkahub.data.ai.tools.SystemToolOption.Gadgetbridge)
         if (alarmEnabled) options.add(me.rerere.rikkahub.data.ai.tools.SystemToolOption.Alarm)
+        if (timerEnabled) options.add(me.rerere.rikkahub.data.ai.tools.SystemToolOption.Timer)
         if (batteryEnabled) options.add(me.rerere.rikkahub.data.ai.tools.SystemToolOption.Battery)
         if (musicEnabled) options.add(me.rerere.rikkahub.data.ai.tools.SystemToolOption.Music)
         if (smsEnabled) options.add(me.rerere.rikkahub.data.ai.tools.SystemToolOption.Sms)
@@ -102,6 +107,7 @@ data class SystemToolsSetting(
         if (scanMediaEnabled) options.add(me.rerere.rikkahub.data.ai.tools.SystemToolOption.ScanMedia)
         if (postNotificationEnabled) options.add(me.rerere.rikkahub.data.ai.tools.SystemToolOption.PostNotification)
         if (storageInfoEnabled) options.add(me.rerere.rikkahub.data.ai.tools.SystemToolOption.StorageInfo)
+        if (appSwitchEnabled) options.add(me.rerere.rikkahub.data.ai.tools.SystemToolOption.AppSwitch)
         return options
     }
 }

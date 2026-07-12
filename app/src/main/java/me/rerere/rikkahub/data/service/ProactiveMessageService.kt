@@ -281,10 +281,42 @@ class ProactiveMessageService : KoinComponent {
             Log.w(TAG, "Failed to get foreground app", e)
         }
 
+        // 今日通知
+        try {
+            val notifications = me.rerere.rikkahub.data.service.RikkaNotificationListenerService.getTodayNotifications().take(10)
+            if (notifications.isNotEmpty()) {
+                sb.appendLine("今日通知（最近${notifications.size}条）:")
+                notifications.forEach { notif ->
+                    sb.appendLine("  - [${notif.appName}] ${notif.title}: ${notif.content.take(50)}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get notifications", e)
+        }
+
+        // 设备信息（电量、充电状态等）
+        try {
+            val batteryIntent = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+            if (batteryIntent != null) {
+                val level = batteryIntent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
+                val scale = batteryIntent.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1)
+                val pct = if (level >= 0 && scale > 0) (level * 100) / scale else -1
+                val status = batteryIntent.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1)
+                val isCharging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING || status == android.os.BatteryManager.BATTERY_STATUS_FULL
+                sb.appendLine("设备电量: ${pct}%${if (isCharging) "（充电中）" else ""}")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get battery info", e)
+        }
+
+        // 健康状态（Gadgetbridge）- 跳过，AI可通过工具自行查询
+
         sb.appendLine()
         sb.appendLine("请根据以上上下文，以自然、关心、有趣的方式主动给用户发一条消息。")
         sb.appendLine()
         sb.appendLine("重要规则：")
+        sb.appendLine("- 绝对不要复述上一轮的对话内容，要发新的话题或新的关心")
+        sb.appendLine("- 如果上一轮已经说过类似的话，这次换一个完全不同的角度")
         sb.appendLine("- 不要提及你是在定时发消息，要像自然想起对方一样")
         sb.appendLine("- 绝对不要提及任何数据来源、工具使用、传感器数据、位置服务、应用使用统计等技术细节")
         sb.appendLine("- 不要说\"根据xxx\"、\"我注意到xxx数据\"之类暴露信息来源的话")
@@ -364,6 +396,8 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
         private const val MAX_TOOL_STEPS = 5 // 主动消息最大工具调用步数
         // 外部触发（网关轮询）时跳过内部 minInterval 去重
         const val EXTRA_FORCE_TRIGGER = "force_trigger"
+        // 激进模式设备事件上下文（由 DeviceEventAiTriggerService 传入）
+        const val EXTRA_DEVICE_EVENT_CONTEXT = "device_event_context"
     }
 
     // 输入转换器（与 ChatService 保持一致）
@@ -388,10 +422,13 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "=== TriggerService onStartCommand ===")
-        // 外部触发（网关轮询）时跳过内部 minInterval 去重
+        // 外部触发（网关轮询/激进模式设备事件）时跳过内部 minInterval 去重
         val isForceTrigger = intent?.getBooleanExtra(EXTRA_FORCE_TRIGGER, false) ?: false
+        // 激进模式设备事件上下文（由 DeviceEventAiTriggerService 传入）
+        val deviceEventContext = intent?.getStringExtra(EXTRA_DEVICE_EVENT_CONTEXT)
+        val isFromDeviceEvent = deviceEventContext != null
         if (isForceTrigger) {
-            Log.d(TAG, "Force trigger from gateway poll, will skip min interval check")
+            Log.d(TAG, "Force trigger${if (isFromDeviceEvent) " from device event" else " from gateway poll"}, will skip min interval check")
         }
         val notification = androidx.core.app.NotificationCompat.Builder(this, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID)
             .setContentTitle("正在思考...")
@@ -406,7 +443,8 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 val settings = settingsStore.settingsFlow.first()
                 val proactiveSetting = settings.proactiveMessageSetting
 
-                if (!proactiveSetting.enabled) {
+                // 激进模式设备事件触发时，不检查主动消息开关（可独立工作）
+                if (!proactiveSetting.enabled && !isFromDeviceEvent) {
                     stopSelf()
                     return@launch
                 }
@@ -453,9 +491,14 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 // 构建上下文
                 val idleMinutes = runCatching { val last = proactiveMessageService.getLastMessageTimeMs(); if (last > 0) ((System.currentTimeMillis() - last) / 60000L).toInt() else Int.MAX_VALUE }.getOrDefault(Int.MAX_VALUE)
 
-                val contextStr = proactiveMessageService.buildProactiveContext(
-                    this@ProactiveMessageTriggerService, settings
-                )
+                // 如果有设备事件上下文（激进模式），使用它替代常规上下文；否则使用常规上下文
+                val contextStr = if (isFromDeviceEvent && deviceEventContext != null) {
+                    deviceEventContext
+                } else {
+                    proactiveMessageService.buildProactiveContext(
+                        this@ProactiveMessageTriggerService, settings
+                    )
+                }
 
                 // 获取历史消息
                 val historyMessages = conversation?.currentMessages?.let {
@@ -464,14 +507,18 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     } else it
                 } ?: emptyList()
 
-                // 构建系统提示词（包含记忆）
-                val systemPrompt = buildSystemPrompt(assistant, settings, idleMinutes, proactiveSetting.jumpIdleThresholdMinutes)
+                // 构建系统提示词（包含记忆 + 上下文，都放在最后面避免被网关淹没）
+                val systemPrompt = buildSystemPrompt(assistant, settings, idleMinutes, proactiveSetting.jumpIdleThresholdMinutes, isFromDeviceEvent, if (isFromDeviceEvent) deviceEventContext else contextStr)
 
-                // 构建用户上下文消息
+                // user message 只放简短指令（上下文已在系统提示词中）
                 val userMessage = UIMessage(
                     role = MessageRole.USER,
                     parts = listOf(UIMessagePart.Text(
-                        contextStr + "\n\n如果你觉得现在没什么好说的，或者没什么有趣的话题，请只回复 [PASS] 即可，不要强行找话题。"
+                        if (isFromDeviceEvent) {
+                            "请根据以上用户动向决定是否发消息。没什么好说的就回复 [PASS]。"
+                        } else {
+                            "请根据以上上下文决定是否发消息。没什么好说的就回复 [PASS] 即可，不要强行找话题。"
+                        }
                     ))
                 )
 
@@ -562,13 +609,12 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     parts = emptyList()
                 )
 
-                // 解析 [JUMP] 标记（仅当设置开启时才可能跳转）
-                val allowForceJump = proactiveSetting.allowForceJump
+                // 解析 [JUMP] 标记（AI总是可以跳转，不需要开关）
                 val rawText = aiMessage.parts.filterIsInstance<UIMessagePart.Text>()
                     .joinToString("\n") { it.text }.trim()
                 val replyText = rawText.replace("\\[JUMP]".toRegex(RegexOption.IGNORE_CASE), "").trim()
-                val reachThreshold = idleMinutes >= proactiveSetting.jumpIdleThresholdMinutes
-                val shouldJump = allowForceJump && reachThreshold && hasJumpFlag // 超过阈值 + AI判断需要跳转
+                // AI总是可以跳转，不需要allowForceJump开关
+                val shouldJump = hasJumpFlag
 
                 // 若移除了标记，同步更新 session 里 aiMessage 的文本 parts
                 if (rawText != replyText) {
@@ -625,14 +671,17 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 Log.e(ProactiveMessageService.TAG, "Failed to trigger proactive message", e)
             } finally {
                 // 确保无论成功/失败都安排下一次，避免一次 API 错误（如 400）永久中断定时链
-                try {
-                    val currentSettings = settingsStore.settingsFlow.first()
-                    ProactiveMessageService.scheduleNext(
-                        this@ProactiveMessageTriggerService,
-                        currentSettings.proactiveMessageSetting
-                    )
-                } catch (e: Exception) {
-                    Log.e(ProactiveMessageService.TAG, "Failed to reschedule after completion/error", e)
+                // 激进模式设备事件触发时不需要安排下一次定时主动消息（由 DeviceEventAiTriggerService 自己驱动）
+                if (!isFromDeviceEvent) {
+                    try {
+                        val currentSettings = settingsStore.settingsFlow.first()
+                        ProactiveMessageService.scheduleNext(
+                            this@ProactiveMessageTriggerService,
+                            currentSettings.proactiveMessageSetting
+                        )
+                    } catch (e: Exception) {
+                        Log.e(ProactiveMessageService.TAG, "Failed to reschedule after completion/error", e)
+                    }
                 }
                 conversationId?.let { chatService.removeConversationReference(it) }
                 stopSelf()
@@ -644,8 +693,9 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
 
     /**
      * 构建系统提示词，包含记忆等内容
+     * isFromDeviceEvent: 是否由激进模式设备事件触发
      */
-    private suspend fun buildSystemPrompt(assistant: Assistant, settings: Settings, idleMinutes: Int = 0, jumpThreshold: Int = 120): String {
+    private suspend fun buildSystemPrompt(assistant: Assistant, settings: Settings, idleMinutes: Int = 0, jumpThreshold: Int = 120, isFromDeviceEvent: Boolean = false, deviceEventContext: String? = null): String {
         return buildString {
             // 基础系统提示词
             val effectiveSystemPrompt = if (assistant.allowConversationSystemPrompt) {
@@ -657,7 +707,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 append(effectiveSystemPrompt)
             }
 
-            // 记忆
+            // 记忆（设备事件上下文移到最后面，避免被网关注入的内容淹没）
             if (assistant.enableMemory) {
                 val memories = if (assistant.useGlobalMemory) {
                     memoryRepository.getGlobalMemories()
@@ -674,17 +724,38 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 }
             }
 
-            // 主动消息跳转规则（注入阈值，以用户系统提示词为准）
-            appendLine()
-            appendLine()
-            appendLine("## 主动消息跳转规则")
-            appendLine("距离用户上次回复已过去 $idleMinutes 分钟。跳转阈值: $jumpThreshold 分钟。")
-            appendLine("当满足以下条件时，在消息末尾追加 [JUMP] 标记（单独一行）：")
-            appendLine("- 距离用户上次回复超过 $jumpThreshold 分钟，且这条消息比较重要/紧急")
-            appendLine("- 或者用户之前明确提到过、现在该提醒的事")
-            appendLine("如果用户刚回复过（未超阈值），或只是一般闲聊，则不要追加 [JUMP]。")
-            appendLine("如果你在自己的系统提示词里有其他关于通知/提醒/跳转的规则，以你的规则为准优先。")
-            appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
+            if (isFromDeviceEvent) {
+                // 激进模式设备事件触发的专用提示词 + 设备事件上下文（放在最后面，网关追加内容之后模型最后看到的就是这个）
+                appendLine()
+                appendLine()
+                appendLine("## ⚠️ 当前触发原因：用户手机动向（设备事件触发）")
+                appendLine("你是因为检测到用户的手机操作动向（切换应用/亮屏锁屏/回桌面）而被触发的。")
+                appendLine("请特别注意：这是设备事件触发，不是定时主动消息。根据用户的手机操作动向来决定是否发消息。")
+                appendLine("绝对不要复述上一轮的对话内容，要发新的话题或新的关心。")
+                appendLine("请根据用户的动向，自然地决定是否主动发一条消息。距离用户上次回复已过去 $idleMinutes 分钟。")
+                appendLine("如果你觉得现在没什么好说的，或者没什么有趣的话题，请只回复 [PASS] 即可。")
+                appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
+                // 直接注入设备事件上下文
+                if (!deviceEventContext.isNullOrBlank()) {
+                    appendLine()
+                    appendLine(deviceEventContext)
+                }
+            } else {
+                // 常规主动消息：上下文也注入系统提示词最后面（和激进模式一样）
+                appendLine()
+                appendLine()
+                appendLine("## 主动消息触发（定时触发）")
+                appendLine("距离用户上次回复已过去 $idleMinutes 分钟。")
+                appendLine("这是定时触发的主动消息，不是设备事件触发。")
+                appendLine("绝对不要复述上一轮的对话内容，要发新的话题或新的关心。")
+                appendLine("如果你觉得现在没什么好说的，或者没什么有趣的话题，请只回复 [PASS] 即可。")
+                appendLine("[JUMP] 标记不会展示给用户，仅用于触发屏幕跳转。")
+                // 注入完整上下文（定位、前台app、app使用、通知、电量、健康等）
+                if (!deviceEventContext.isNullOrBlank()) {
+                    appendLine()
+                    appendLine(deviceEventContext)
+                }
+            }
         }
     }
 

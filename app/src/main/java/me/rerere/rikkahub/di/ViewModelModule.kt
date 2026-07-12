@@ -25,6 +25,7 @@ import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceVM
 import me.rerere.rikkahub.ui.pages.setting.SettingVM
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerVM
 import me.rerere.rikkahub.ui.pages.translator.TranslatorVM
+import me.rerere.rikkahub.workflow.ui.WorkflowsViewModel
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
@@ -81,4 +82,5 @@ val viewModelModule = module {
     viewModelOf(::HealthVM)
     viewModelOf(::MemoryBankVM)
     viewModelOf(::MiniAppViewModel)
+    viewModelOf(::WorkflowsViewModel)
 }
