@@ -270,8 +270,8 @@ class ConversationRepository(
                     conversationToConversationEntity(conversation)
                 )
 
-                val existingNodes = messageNodeDAO.getNodesOfConversation(conversation.id.toString())
-                val existingById = existingNodes.associateBy { it.id }
+                // 只查 id，不碰 messages 列，避免因个别行 blob 过大导致这里直接抛异常
+                val existingIds = messageNodeDAO.getNodeIdsOfConversation(conversation.id.toString()).toSet()
 
                 val newEntities = conversation.messageNodes.mapIndexed { index, node ->
                     MessageNodeEntity(
@@ -284,11 +284,31 @@ class ConversationRepository(
                 }
                 val newById = newEntities.associateBy { it.id }
 
-                // 只处理真正发生变化的 node：内容/顺序(nodeIndex)/selectIndex 有任何不同才写库
+                // 只对本轮涉及、且之前已存在的 id 去查内容做比较，缩小命中超大行的范围
+                val idsNeedCompare = newEntities.map { it.id }.filter { it in existingIds }
+                val existingById = if (idsNeedCompare.isEmpty()) {
+                    emptyMap()
+                } else {
+                    try {
+                        messageNodeDAO.getNodesByIds(idsNeedCompare).associateBy { it.id }
+                    } catch (e: SQLiteBlobTooBigException) {
+                        Log.w(
+                            TAG,
+                            "updateConversation: blob too big while comparing existing nodes, " +
+                                "conversationId=${conversation.id}, will treat all as changed and overwrite",
+                            e
+                        )
+                        // 读不出旧内容就没法比较，保守地当作全部有变化，直接覆盖写入（REPLACE，安全）
+                        emptyMap()
+                    }
+                }
+
+                // 只处理真正发生变化的 node：内容/顺序(nodeIndex)/selectIndex 有任何不同才写库；
+                // 读不到旧内容的（existingById 里没有对应 id）也会被判定为"变化"，直接覆盖写入
                 val toUpsert = newEntities.filter { newEntity ->
                     existingById[newEntity.id] != newEntity
                 }
-                val toDeleteIds = existingById.keys - newById.keys
+                val toDeleteIds = existingIds - newById.keys
 
                 if (toDeleteIds.isNotEmpty()) {
                     messageNodeDAO.deleteByIds(toDeleteIds.toList())
@@ -444,21 +464,52 @@ class ConversationRepository(
 
         return database.withTransaction {
             val nodes = mutableListOf<MessageNode>()
-            var offset = 0
+
+            // 提前查出总行数，这样命中超大blob逐行重试时能精确控制范围，
+            // 不再依赖"空结果"来判断是否读到末尾——空结果既可能是被跳过的超大行，
+            // 也可能是真的没数据，两者无法区分，是之前会误判提前退出、丢消息的根因。
+            val totalCount = messageNodeDAO.getNodeCountOfConversation(conversationId)
+            if (totalCount == 0) return@withTransaction nodes
+
             val pageSize = 64
-            while (true) {
+            var offset = 0
+            while (offset < totalCount) {
                 val page = try {
                     messageNodeDAO.getNodesOfConversationPaged(conversationId, pageSize, offset)
                 } catch (e: SQLiteBlobTooBigException) {
-                    Log.e(TAG, "loadMessageNodes: blob too big, conversationId=$conversationId, offset=$offset", e)
-                    offset += pageSize
-                    continue
+                    Log.w(
+                        TAG,
+                        "loadMessageNodes: blob too big in page, conversationId=$conversationId, " +
+                            "offset=$offset, retrying row by row to isolate the bad row",
+                        e
+                    )
+                    // 整页命中超大blob时，逐行重试，精确定位并只跳过那一行，
+                    // 避免同一页里其他正常的消息被连坐丢弃
+                    // （这是之前 UI 显示数 < 数据库实际数的根因）
+                    val recovered = mutableListOf<MessageNodeEntity>()
+                    val pageEnd = minOf(offset + pageSize, totalCount)
+                    for (rowOffset in offset until pageEnd) {
+                        try {
+                            val row = messageNodeDAO.getNodesOfConversationPaged(conversationId, 1, rowOffset)
+                            recovered.addAll(row)
+                        } catch (rowError: SQLiteBlobTooBigException) {
+                            Log.e(
+                                TAG,
+                                "loadMessageNodes: skipping single oversized row, " +
+                                    "conversationId=$conversationId, offset=$rowOffset",
+                                rowError
+                            )
+                        }
+                    }
+                    recovered
                 } catch (e: IllegalStateException) {
                     Log.e(TAG, "loadMessageNodes failed, conversationId=$conversationId, offset=$offset", e)
                     offset += pageSize
                     continue
                 }
-                if (page.isEmpty()) break
+
+                // 注意：不能用 page.isEmpty() 来判断是否读完——逐行重试时如果整页全是超大行，
+                // recovered 会是空的，但后面可能还有正常数据。循环终止完全由 offset < totalCount 控制。
                 page.forEach { entity ->
                     val messages = JsonInstant.decodeFromString<List<UIMessage>>(entity.messages)
                     val nodeId = Uuid.parse(entity.id)
@@ -471,7 +522,7 @@ class ConversationRepository(
                         )
                     )
                 }
-                offset += page.size
+                offset += pageSize
             }
             nodes
         }

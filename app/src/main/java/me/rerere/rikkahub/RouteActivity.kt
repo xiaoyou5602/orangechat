@@ -123,6 +123,7 @@ import me.rerere.rikkahub.ui.pages.miniapp.MiniAppPage
 import me.rerere.rikkahub.ui.pages.search.SearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayPage
+import me.rerere.rikkahub.ui.pages.setting.SettingThemePage
 import me.rerere.rikkahub.ui.pages.setting.SettingDonatePage
 import me.rerere.rikkahub.ui.pages.setting.SettingFilesPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
@@ -489,6 +490,10 @@ class RouteActivity : ComponentActivity() {
                                 SettingDisplayPage()
                             }
 
+                            entry<Screen.SettingTheme> {
+                                SettingThemePage()
+                            }
+
                             entry<Screen.SettingProvider> {
                                 SettingProviderPage()
                             }
@@ -853,6 +858,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingDisplay : Screen
+
+    @Serializable
+    data object SettingTheme : Screen
 
     @Serializable
     data object SettingProvider : Screen

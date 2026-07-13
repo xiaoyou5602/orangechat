@@ -261,7 +261,7 @@ function fetch(url, options) {
                     nativeFetch(url, optionsJson)
                 } catch (e: Exception) {
                     Log.e(TAG, "Native fetch error: url=$url", e)
-                    """{"success":false,"error":"${e.message?.replace("\"", "\\\"")}"}"""
+                    """{"success":false,"error":${escapeJson(e.message ?: "Unknown error")}}"""
                 }
             })
  
@@ -273,7 +273,7 @@ function fetch(url, options) {
                     nativeMemoryBankBridge(action, paramsJson)
                 } catch (e: Exception) {
                     Log.e(TAG, "MemoryBank bridge error: action=$action", e)
-                    """{"success":false,"error":"${e.message?.replace("\"", "\\\"")}"}"""
+                    """{"success":false,"error":${escapeJson(e.message ?: "Unknown error")}}"""
                 }
             })
  
@@ -285,7 +285,7 @@ function fetch(url, options) {
                     nativeMusicPlayerBridge(action, paramsJson)
                 } catch (e: Exception) {
                     Log.e(TAG, "MusicPlayer bridge error: action=$action", e)
-                    """{"success":false,"error":"${e.message?.replace("\"", "\\\"")}"}"""
+                    """{"success":false,"error":${escapeJson(e.message ?: "Unknown error")}}"""
                 }
             })
 
@@ -297,7 +297,7 @@ function fetch(url, options) {
                     nativeDataStoreBridge(action, paramsJson)
                 } catch (e: Exception) {
                     Log.e(TAG, "DataStore bridge error: action=$action, params=$paramsJson", e)
-                    """{"success":false,"error":"${e.message?.replace("\"", "\\\"")}"}"""
+                    """{"success":false,"error":${escapeJson(e.message ?: "Unknown error")}}"""
                 }
             })
 
@@ -368,7 +368,7 @@ function fetch(url, options) {
             result
         } catch (e: Exception) {
             Log.e(TAG, "nativeFetch failed: url=$url", e)
-            """{"success":false,"error":"${e.message?.replace("\"", "\\\"")?.replace("\\", "\\\\")}"}"""
+            """{"success":false,"error":${escapeJson(e.message ?: "Unknown error")}}"""
         }
     }
  
@@ -407,7 +407,7 @@ function fetch(url, options) {
                     val state = status["state"] ?: "stopped"
                     val title = status["title"] ?: ""
                     val artist = status["artist"] ?: ""
-                    """{"state":"${state}","title":${escapeJson(title)},"artist":${escapeJson(artist)}}"""
+                    """{"state":${escapeJson(state)},"title":${escapeJson(title)},"artist":${escapeJson(artist)}}"""
                 }
                 else -> {
                     Log.w(TAG, "MusicPlayer bridge unknown action: $action")
@@ -416,7 +416,7 @@ function fetch(url, options) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "MusicPlayer bridge action='$action' failed", e)
-            """{"success":false,"error":"${e.message?.replace("\"", "\\\"")?.replace("\\", "\\\\")}"}"""
+            """{"success":false,"error":${escapeJson(e.message ?: "Unknown error")}}"""
         }
     }
 
@@ -458,9 +458,7 @@ function fetch(url, options) {
                 "list" -> {
                     val prefix = params.optString("prefix", "")
                     val keys = store.listData().filter { it.startsWith(prefix) }
-                    val keysJson = keys.joinToString(",", "[", "]") {
-                        "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\""
-                    }
+                    val keysJson = keys.joinToString(",", "[", "]") { escapeJson(it) }
                     """{"success":true,"keys":$keysJson}"""
                 }
                 else -> {
@@ -470,7 +468,7 @@ function fetch(url, options) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "DataStore bridge action='$action' failed, params=$paramsJson", e)
-            """{"success":false,"error":"${e.message?.replace("\"", "\\\"")?.replace("\\", "\\\\")}"}"""
+            """{"success":false,"error":${escapeJson(e.message ?: "Unknown error")}}"""
         }
     }
  
@@ -656,7 +654,7 @@ function fetch(url, options) {
                         } else {
                             val memories = service.recallMemories(query, count)
                             val memoriesJson = memories.joinToString(",", "[", "]") { mem ->
-                                """{"id":${mem.id},"content":${escapeJson(mem.content)},"type":"${mem.type}","createdAt":${mem.createdAt},"role":${mem.role?.let { escapeJson(it) } ?: "null"}}"""
+                                """{"id":${mem.id},"content":${escapeJson(mem.content)},"type":${escapeJson(mem.type)},"createdAt":${mem.createdAt},"role":${mem.role?.let { escapeJson(it) } ?: "null"}}"""
                             }
                             """{"success":true,"memories":$memoriesJson}"""
                         }
@@ -678,7 +676,7 @@ function fetch(url, options) {
                         val limit = params.optInt("limit", 20)
                         val memories = service.searchMemories(keyword, type, limit)
                         val memoriesJson = memories.joinToString(",", "[", "]") { mem ->
-                            """{"id":${mem.id},"content":${escapeJson(mem.content)},"type":"${mem.type}","createdAt":${mem.createdAt},"role":${mem.role?.let { escapeJson(it) } ?: "null"}}"""
+                            """{"id":${mem.id},"content":${escapeJson(mem.content)},"type":${escapeJson(mem.type)},"createdAt":${mem.createdAt},"role":${mem.role?.let { escapeJson(it) } ?: "null"}}"""
                         }
                         """{"success":true,"memories":$memoriesJson}"""
                     }
@@ -696,21 +694,17 @@ function fetch(url, options) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "MemoryBank bridge action='$action' failed", e)
-            """{"success":false,"error":"${e.message?.replace("\"", "\\\"")?.replace("\\", "\\\\")}"}"""
+            """{"success":false,"error":${escapeJson(e.message ?: "Unknown error")}}"""
         }
     }
  
     /**
      * 转义 JSON 字符串
+     * 使用 kotlinx.serialization 的 JsonPrimitive 序列化器，完整、正确、符合 JSON 规范地转义，
+     * 不会漏掉 \u0000-\u001F 范围内的任何控制字符（之前手写实现漏了 \b、\f 等）。
      */
     private fun escapeJson(str: String): String {
-        val escaped = str
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
-        return "\"$escaped\""
+        return json.encodeToString(JsonPrimitive.serializer(), JsonPrimitive(str))
     }
  
     /**

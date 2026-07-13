@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -78,6 +79,7 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
     var amoledDarkMode by rememberAmoledDarkMode()
+    val navController = me.rerere.rikkahub.ui.context.LocalNavController.current
 
     fun updateDisplaySetting(setting: DisplaySetting) {
         displaySetting = setting
@@ -144,6 +146,16 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                                 onCheckedChange = { vm.updateSettings(settings.copy(dynamicColor = it)) },
                             )
                         },
+                        colors = CustomColors.listItemColors,
+                    )
+                    // Temporary entry point for custom theme management (TODO: will be redesigned later)
+                    ListItem(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable { navController.navigate(me.rerere.rikkahub.Screen.SettingTheme) },
+                        headlineContent = { Text("自定义主题管理") },
+                        supportingContent = { Text("HCT 色彩算法自定义主题") },
                         colors = CustomColors.listItemColors,
                     )
                     if (!settings.dynamicColor) {

@@ -15,6 +15,28 @@ interface MessageNodeDAO {
     @Query("SELECT * FROM message_node WHERE conversation_id = :conversationId ORDER BY node_index ASC")
     suspend fun getNodesOfConversation(conversationId: String): List<MessageNodeEntity>
 
+    /**
+     * 只查 id，不查 messages 列，用于计算"哪些node已经不存在了需要删除"，
+     * 不会因为某一行 messages 内容过大触发 SQLiteBlobTooBigException。
+     */
+    @Query("SELECT id FROM message_node WHERE conversation_id = :conversationId ORDER BY node_index ASC")
+    suspend fun getNodeIdsOfConversation(conversationId: String): List<String>
+
+    /**
+     * 按 id 列表批量查询完整内容，用于对"本轮涉及改动的node"做内容比较（是否需要更新）。
+     * 只对本轮实际涉及的少量 id 查询，比对整个对话全表查询更不容易命中超大行。
+     */
+    @Query("SELECT * FROM message_node WHERE id IN (:ids)")
+    suspend fun getNodesByIds(ids: List<String>): List<MessageNodeEntity>
+
+    /**
+     * 查某个对话下 node 的总行数。loadMessageNodes 用它提前知道总行数，
+     * 这样在逐行重试跳过超大blob行时，能精确控制循环范围，
+     * 不会因为"空结果"（可能是被跳过的超大行，也可能是真的到末尾）而误判提前退出。
+     */
+    @Query("SELECT COUNT(*) FROM message_node WHERE conversation_id = :conversationId")
+    suspend fun getNodeCountOfConversation(conversationId: String): Int
+
     @Query(
         "SELECT * FROM message_node WHERE conversation_id = :conversationId " +
             "ORDER BY node_index ASC LIMIT :limit OFFSET :offset"

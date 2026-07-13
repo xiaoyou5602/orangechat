@@ -23,4 +23,33 @@ class SettingVM(
             settingsStore.update(settings)
         }
     }
+
+    fun addCustomTheme(theme: me.rerere.rikkahub.ui.theme.CustomTheme) {
+        viewModelScope.launch {
+            settingsStore.update { settings ->
+                settings.copy(customThemes = settings.customThemes + theme)
+            }
+        }
+    }
+
+    fun updateCustomTheme(theme: me.rerere.rikkahub.ui.theme.CustomTheme) {
+        viewModelScope.launch {
+            settingsStore.update { settings ->
+                settings.copy(
+                    customThemes = settings.customThemes.map {
+                        if (it.id == theme.id) theme else it
+                    }
+                )
+            }
+        }
+    }
+
+    fun deleteCustomTheme(themeId: String) {
+        viewModelScope.launch {
+            settingsStore.update { settings ->
+                val ns = settings.copy(customThemes = settings.customThemes.filter { it.id != themeId })
+                if (settings.themeId == themeId) ns.copy(themeId = me.rerere.rikkahub.ui.theme.PresetThemes[0].id) else ns
+            }
+        }
+    }
 }
