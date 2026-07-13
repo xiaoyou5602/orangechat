@@ -51,7 +51,6 @@ sealed class SystemToolOption {
     @Serializable @SerialName("app_switch") data object AppSwitch : SystemToolOption()
     @Serializable @SerialName("app_lock") data object AppLock : SystemToolOption()
     @Serializable @SerialName("fingerprint") data object Fingerprint : SystemToolOption()
-    @Serializable @SerialName("download") data object Download : SystemToolOption()
 }
 
 class SystemTools(private val context: Context, private val settings: Settings) {
@@ -383,7 +382,6 @@ class SystemTools(private val context: Context, private val settings: Settings) 
             me.rerere.rikkahub.ui.activity.BiometricPromptActivity.buffer,
         )
     }
-    private val downloadTool by lazy { downloadTool(context) }
 
     // ==================== 获取工具列表 ====================
 
@@ -427,7 +425,6 @@ class SystemTools(private val context: Context, private val settings: Settings) 
         if (SystemToolOption.AppSwitch in enabledTools) tools.add(appSwitchTool)
         if (SystemToolOption.AppLock in enabledTools) tools.add(appLockTool)
         if (SystemToolOption.Fingerprint in enabledTools) tools.add(fingerprintTool)
-        if (SystemToolOption.Download in enabledTools) tools.add(downloadTool)
         return tools
     }
 }
