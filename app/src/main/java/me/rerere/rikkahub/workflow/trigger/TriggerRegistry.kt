@@ -110,6 +110,7 @@ class TriggerRegistry(
         val foregroundConsumerCount = enabled.count { wf ->
             wf.trigger is me.rerere.rikkahub.workflow.model.TriggerSpec.AppLaunched
                 || wf.trigger is me.rerere.rikkahub.workflow.model.TriggerSpec.AppClosed
+                || wf.trigger is me.rerere.rikkahub.workflow.model.TriggerSpec.AppForegroundDuration
                 || wf.conditions.any {
                     it is me.rerere.rikkahub.workflow.model.ConditionSpec.ForegroundAppIs
                         || it is me.rerere.rikkahub.workflow.model.ConditionSpec.ForegroundAppIn

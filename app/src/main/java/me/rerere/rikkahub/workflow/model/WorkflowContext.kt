@@ -17,4 +17,5 @@ data class WorkflowContext(
     val screenOn: Boolean,
     val latitude: Double?,
     val longitude: Double?,
+    val lastChatMs: Long? = null,  // epoch ms of last chat message; null = unknown/no history
 )

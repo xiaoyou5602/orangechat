@@ -155,6 +155,8 @@
   <string name="assistant_page_use_assistant_avatar_desc">Use assistant avatar and name instead of model avatar and name in chats</string>
   <string name="assistant_page_split_bubble_by_line_title">Split Messages by Line</string>
   <string name="assistant_page_split_bubble_by_line_desc">Split the reply into separate chat bubbles at each line break the model writes</string>
+  <string name="assistant_page_split_user_bubble_by_line_title">Split User Messages by Line</string>
+  <string name="assistant_page_split_user_bubble_by_line_desc">Split your sent messages into separate chat bubbles at each line break</string>
   <string name="audio">Audio</string>
   <string name="avatar_cancel">Cancel</string>
   <string name="avatar_change_avatar">Change Avatar</string>

@@ -131,6 +131,7 @@ object WorkflowApprovalRenderer {
         is TriggerSpec.GeofenceExit -> "you leave ${t.label ?: "a place (${t.lat},${t.lng}, ${t.radiusM}m)"}"
         is TriggerSpec.AppLaunched -> "${t.packageName} is launched"
         is TriggerSpec.AppClosed -> "${t.packageName} is closed"
+        is TriggerSpec.AppForegroundDuration -> "${t.packageName} stays foreground for ${t.minutes}m"
         is TriggerSpec.NotificationReceived -> {
             val parts = mutableListOf<String>()
             t.packageName?.let { parts += "from $it" }
@@ -162,6 +163,7 @@ object WorkflowApprovalRenderer {
             is ConditionSpec.ForegroundAppIn -> "${c.packageNames.size}-app foreground match"
             is ConditionSpec.ScreenIsOn -> "screen on"
             is ConditionSpec.ScreenIsOff -> "screen off"
+            is ConditionSpec.LastChatAgo -> "last chat ≥ ${c.minutes}m ago"
         }
         return if (c.invert) "NOT ($base)" else base
     }

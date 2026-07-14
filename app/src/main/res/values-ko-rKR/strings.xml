@@ -155,6 +155,8 @@
   <string name="assistant_page_use_assistant_avatar_desc">채팅에서 어시스턴트 아바타 및 이름을 모델의 것 대신 사용</string>
   <string name="assistant_page_split_bubble_by_line_title">줄바꿈으로 말풍선 분리</string>
   <string name="assistant_page_split_bubble_by_line_desc">모델이 직접 작성한 줄바꿈마다 답장을 별도의 채팅 말풍선으로 분리합니다</string>
+  <string name="assistant_page_split_user_bubble_by_line_title">사용자 메시지 줄바꿈으로 분리</string>
+  <string name="assistant_page_split_user_bubble_by_line_desc">보낸 메시지를 줄바꿈마다 별도의 채팅 말풍선으로 분리합니다</string>
   <string name="audio">오디오</string>
   <string name="avatar_cancel">취소</string>
   <string name="avatar_change_avatar">아바타 변경</string>

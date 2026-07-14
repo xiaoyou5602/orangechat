@@ -91,6 +91,14 @@ sealed class TriggerSpec {
     @SerialName("app_closed")
     data class AppClosed(val packageName: String) : TriggerSpec()
 
+    /** Fires when [packageName] has stayed in the foreground for ≥ [minutes] continuously. */
+    @Serializable
+    @SerialName("app_foreground_duration")
+    data class AppForegroundDuration(
+        val packageName: String,
+        val minutes: Int,
+    ) : TriggerSpec()
+
     /**
      * `*_contains` fields match as case-insensitive plain substrings; `*_matches` fields
      * hold a Java regex ([java.util.regex.Pattern]) tested with `find()` against the

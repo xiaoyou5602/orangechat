@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Supabase 数据看板</title>
+
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link href="https://cdn.jsdelivr.net/npm/@fontsource/cormorant-garamond@5/400.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@fontsource/cormorant-garamond@5/500.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-sc@5/400.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-sc@5/500.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@fontsource/pinyon-script@5/400.min.css" rel="stylesheet">
+
+<script>
+  (function(){
+    var THEMES = ["light","harbor"];
+    try{
+      var t = localStorage.getItem("supabase_viewer_theme");
+      if (THEMES.indexOf(t) < 0) t = "light";
+      document.documentElement.setAttribute("data-theme", t);
+    }catch(e){ document.documentElement.setAttribute("data-theme", "light"); }
+  })();
+</script>
+
+<style>
+  :root{
+    --screen-height: 100vh;
+    --ios-pwa-bottom-bleed: 0px;
+    --ref-width: 941px;
+    --font-en: "Cormorant Garamond", Georgia, serif;
+    --font-cn: "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+    --wall-light: url("../assets/chat-light.webp");
+    --wall-harbor: url("../assets/chat-harbor.webp");
+    --wall-default: var(--wall-light);
+    --avatar-default: url("../assets/avatar-sea.png");
+
+    /* PEARL TIDE */
+    --bg: #F7FAFC;
+    --header-bg: #F7FAFC;
+    --hairline: rgba(120,142,165,.24);
+    --text: #253447;
+    --text-soft: #5E7080;
+    --text-faint: #8A99A8;
+    --accent: #4C6378;
+    --accent-fg: #ffffff;
+    --send-bg: #2C4056;
+    --tick: #7E93A4;
+    --composer-bg: #EEF4FA;
+    --field-bg: rgba(247,250,252,.92);
+    --field-line: rgba(151,169,181,.18);
+    --shadow: 0 18px 46px rgba(74, 93, 108, 0.10);
+    --soft-shadow: 0 14px 34px rgba(86, 104, 118, 0.08);
+    --scrim: linear-gradient(180deg, rgba(255,255,255,0.38), rgba(255,255,255,0.12) 30%, rgba(255,255,255,0.04) 68%, rgba(255,255,255,0.22));
+    --header-h: clamp(56px, 10vw, 96px);
+    --side-pad: clamp(16px, 4vw, 40px);
+    --avatar-size: clamp(32px, 5vw, 48px);
+    --card-bg: rgba(244,248,250,.52);
+    --card-line: rgba(150,168,182,.14);
+    --card-shadow: 0 10px 28px rgba(70,92,108,.06);
+    --row-press: rgba(140,160,176,.09);
+    --status-dot: #5fbf8f;
+    --danger: #cf8d92;
+    --danger-shadow: rgba(176,96,104,.24);
+  }
+
+  :root[data-theme="harbor"]{
+    --wall-default: var(--wall-harbor);
+    --bg: #F4F2EF;
+    --header-bg: #F4F2EF;
+    --hairline: rgba(74,93,108,.20);
+    --text: #36404B;
+    --text-soft: #5E6B78;
+    --text-faint: #9197A0;
+    --accent: #4A5D6C;
+    --send-bg: #4A5D6C;
+    --tick: #7E8E9C;
+    --composer-bg: #EFEBE8;
+    --field-bg: rgba(244,242,239,.92);
+    --scrim: linear-gradient(180deg, rgba(255,255,255,0.30), rgba(255,255,255,0.08) 30%, rgba(255,255,255,0.02) 68%, rgba(255,255,255,0.16));
+    --card-bg: rgba(244,242,239,.58);
+    --card-line: rgba(120,138,152,.14);
+    --status-dot: #6FA98C;
+  }
+
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body{ margin:0; padding:0; height:100%; overflow:hidden; overscroll-behavior:none; }
+  body{
+    position: fixed; inset: 0; width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-cn);
+    font-size: clamp(14px, 1.45vw, 16px);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+
+  .wall{
+    position:fixed; inset:0; width:100vw; height:var(--screen-height); z-index:0;
+    background-color: var(--bg);
+    background-image: var(--wall-default);
+    background-size: cover; background-position: center;
+    transform: translateZ(0); -webkit-transform: translateZ(0);
+  }
+  .wall::after{
+    content:""; position:absolute; inset:0; background: var(--scrim); pointer-events:none;
+  }
+
+  .app{
+    display: flex; flex-direction: column;
+    position: fixed; top:0; right:0; bottom:0; left:0; z-index:1;
+    width: min(100vw, var(--ref-width));
+    margin: 0 auto;
+    overflow: hidden;
+  }
+
+  /* header */
+  .topbar{
+    position: sticky; top:0; z-index:10;
+    display:flex; align-items:center; justify-content:center;
+    height: calc(var(--header-h) + env(safe-area-inset-top));
+    padding: calc(env(safe-area-inset-top) + 8px) var(--side-pad) 10px;
+    border-bottom:1px solid var(--hairline);
+    pointer-events:none;
+  }
+  .topbar > *{ pointer-events:auto; }
+  .peerpill{
+    display:flex; flex-direction:column; align-items:center; line-height:1.15;
+    background: transparent; border:none; border-radius:0; padding:0 76px;
+  }
+  .peerpill .name{
+    font-family: "Pinyon Script", var(--font-en), cursive;
+    font-size: clamp(22px, 4vw, 34px);
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: .02em;
+    text-shadow: 0 1px 18px rgba(255,255,255,0.3);
+  }
+  .peerpill .status{
+    font-family: var(--font-en), var(--font-cn);
+    font-size: clamp(11px, 1.6vw, 14px);
+    color: var(--text-soft);
+    margin-top: 3px;
+  }
+  .header-actions{
+    position:absolute;
+    right: calc(var(--side-pad) - 2px);
+    top: calc(env(safe-area-inset-top) + clamp(14px, 2.5vw, 30px));
+    display:flex; align-items:center; gap:8px;
+  }
+  .topbtn{
+    width:36px; height:36px; border:0; border-radius:50%; padding:0;
+    background:transparent; color: var(--text);
+    display:grid; place-items:center; cursor:pointer;
+    transition: transform .15s ease;
+  }
+  .topbtn:active{ transform: scale(.9); }
+  .topbtn svg{ width:22px; height:22px; display:block; }
+
+  /* tabs */
+  .tabs{
+    flex:none;
+    display:flex; align-items:center; gap:8px;
+    padding: 10px var(--side-pad) 6px;
+    z-index:1;
+  }
+  .tab{
+    flex:1;
+    border:1px solid var(--card-line);
+    border-radius:999px;
+    padding: 9px 12px;
+    background: var(--card-bg);
+    color: var(--text-soft);
+    font-family: var(--font-en), var(--font-cn);
+    font-size: 13px;
+    cursor:pointer;
+    transition: all .18s ease;
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  .tab.active{
+    background: var(--send-bg);
+    color: var(--accent-fg);
+    border-color: transparent;
+    box-shadow: var(--soft-shadow);
+  }
+  .tab:active{ transform: scale(.98); }
+
+  /* scroll */
+  .scroll{
+    flex:1 1 auto;
+    overflow-y: auto; overflow-x: hidden;
+    padding: 6px var(--side-pad) calc(90px + env(safe-area-inset-bottom));
+    z-index:1;
+  }
+  .scroll::-webkit-scrollbar{ width:0; height:0; }
+
+  .empty{
+    text-align:center; color: var(--text-faint);
+    font-family: var(--font-en), var(--font-cn);
+    margin-top: 18vh;
+  }
+
+  /* cards */
+  .card{
+    margin-bottom: 12px;
+    border-radius: clamp(14px, 2vw, 20px);
+    background: var(--card-bg);
+    border: 1px solid var(--card-line);
+    box-shadow: var(--card-shadow);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    overflow:hidden;
+    transition: transform .15s ease;
+  }
+  .card:active{ transform: scale(.995); }
+  .card-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 12px 14px 10px;
+    border-bottom:1px solid var(--card-line);
+  }
+  .card-title{
+    font-family: var(--font-en), var(--font-cn);
+    font-size: 13px; color: var(--text-faint);
+  }
+  .card-actions{ display:flex; gap:8px; }
+  .iconbtn{
+    width:28px; height:28px; border-radius:50%; border:none; padding:0;
+    background: transparent; color: var(--text-soft);
+    display:grid; place-items:center; cursor:pointer;
+    transition: all .15s ease;
+  }
+  .iconbtn:hover{ background: var(--row-press); color: var(--accent); }
+  .iconbtn.danger:hover{ color: var(--danger); background: rgba(207,141,146,.12); }
+  .iconbtn svg{ width:15px; height:15px; display:block; }
+
+  .card-body{
+    padding: 10px 14px 14px;
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .field{
+    display:flex; flex-direction:column; gap:2px;
+  }
+  .field-key{
+    font-family: var(--font-en), var(--font-cn);
+    font-size: 11px; color: var(--text-faint);
+    text-transform: lowercase;
+    letter-spacing: .04em;
+  }
+  .field-val{
+    font-size: 14px; color: var(--text);
+    word-break: break-word;
+  }
+  .field-val.null{
+    color: var(--text-faint); font-style: italic;
+  }
+
+  /* fab */
+  .fab{
+    position:fixed; right: calc(var(--side-pad) + env(safe-area-inset-right)); bottom: calc(22px + env(safe-area-inset-bottom));
+    width:52px; height:52px; border-radius:50%;
+    border:none; background: var(--send-bg); color: var(--accent-fg);
+    display:grid; place-items:center;
+    box-shadow: 0 10px 28px rgba(44,64,86,.26);
+    cursor:pointer; z-index:20;
+    transition: transform .18s ease, box-shadow .18s ease;
+  }
+  .fab:active{ transform: scale(.92); box-shadow: 0 6px 16px rgba(44,64,86,.18); }
+  .fab svg{ width:24px; height:24px; display:block; }
+
+  /* modal */
+  .modal{
+    position:fixed; inset:0; z-index:100;
+    display:flex; flex-direction:column;
+    background: var(--bg);
+    transform: translateY(100%);
+    transition: transform .28s var(--ease-soft, cubic-bezier(0.22,1,0.36,1));
+  }
+  .modal.open{ transform: translateY(0); }
+  .modal-wall{
+    position:absolute; inset:0; z-index:-1;
+    background-image: var(--wall-default);
+    background-size: cover; background-position: center;
+  }
+  .modal-wall::after{
+    content:""; position:absolute; inset:0; background: var(--scrim); pointer-events:none;
+  }
+  .modal-head{
+    flex:none;
+    display:flex; align-items:center; justify-content:space-between;
+    min-height: calc(var(--header-h) + env(safe-area-inset-top));
+    padding: calc(env(safe-area-inset-top) + 8px) var(--side-pad) 10px;
+    border-bottom:1px solid var(--hairline);
+  }
+  .modal-title{
+    font-family: "Pinyon Script", var(--font-en), cursive;
+    font-size: clamp(20px, 3.6vw, 30px);
+    color: var(--text);
+  }
+  .modal-body{
+    flex:1 1 auto; overflow-y:auto; overflow-x:hidden;
+    padding: 16px var(--side-pad) calc(20px + env(safe-area-inset-bottom));
+  }
+  .form-field{
+    margin-bottom: 14px;
+  }
+  .form-label{
+    display:block; margin-bottom:5px;
+    font-family: var(--font-en), var(--font-cn);
+    font-size: 12px; color: var(--text-soft);
+  }
+  .form-input, .form-textarea{
+    width:100%;
+    border:1px solid var(--field-line); border-radius:12px;
+    background: var(--field-bg);
+    color: var(--text);
+    font-family: var(--font-cn);
+    font-size: 15px;
+    padding: 11px 13px;
+    outline:none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .form-input:focus, .form-textarea:focus{
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(76,99,120,.10);
+  }
+  .form-textarea{
+    min-height: 90px; resize:vertical;
+  }
+  .btn-row{
+    display:flex; gap:10px; margin-top:22px;
+  }
+  .btn{
+    flex:1; border:none; border-radius:999px;
+    padding: 12px; font-family: var(--font-cn); font-size: 15px; cursor:pointer;
+    transition: transform .15s ease;
+  }
+  .btn:active{ transform: scale(.98); }
+  .btn-primary{ background: var(--send-bg); color: var(--accent-fg); }
+  .btn-secondary{ background: var(--card-bg); color: var(--text-soft); border:1px solid var(--card-line); }
+  .btn-danger{ background: var(--danger); color: #fff; }
+
+  /* toast */
+  .toast{
+    position:fixed; left:50%; bottom: calc(88px + env(safe-area-inset-bottom));
+    transform: translateX(-50%) translateY(20px);
+    opacity:0; pointer-events:none; z-index:200;
+    padding: 10px 18px; border-radius:999px;
+    background: rgba(37,52,71,.86); color:#fff;
+    font-family: var(--font-cn); font-size: 13px;
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
+
+  /* config missing */
+  .config-miss{
+    position:fixed; inset:0; z-index:300;
+    display:flex; align-items:center; justify-content:center;
+    padding: var(--side-pad);
+    background: var(--bg);
+  }
+  .config-miss .card{ width:100%; max-width:420px; text-align:center; padding: 28px 22px; }
+  .config-miss h2{
+    font-family: "Pinyon Script", var(--font-en), cursive;
+    font-size: 28px; margin:0 0 10px;
+  }
+  .config-miss p{ color: var(--text-soft); margin:0; font-size:14px; line-height:1.6; }
+
+  @media (min-width: 600px){
+    .card{ margin-bottom: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wall"></div>
+
+<div class="app" id="app">
+  <header class="topbar">
+    <div class="peerpill">
+      <div class="name">Supabase 数据看板</div>
+      <div class="status" id="statusText">连接中…</div>
+    </div>
+    <div class="header-actions">
+      <button class="topbtn" id="themeBtn" title="切换主题" aria-label="切换主题">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="tabs" id="tabs"></div>
+
+  <main class="scroll" id="list"></main>
+
+  <button class="fab" id="addBtn" title="新增记录" aria-label="新增记录">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+</div>
+
+<!-- 编辑/新增 Modal -->
+<div class="modal" id="editModal" aria-hidden="true">
+  <div class="modal-wall"></div>
+  <header class="modal-head">
+    <button class="topbtn" id="modalClose" aria-label="返回">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    </button>
+    <div class="modal-title" id="modalTitle">编辑记录</div>
+    <div style="width:36px"></div>
+  </header>
+  <div class="modal-body" id="modalBody"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="config-miss hidden" id="configMiss">
+  <div class="card">
+    <h2>尚未配置 Supabase</h2>
+    <p>请先在插件设置中填写 Supabase URL、Key 以及两张表的名称，然后重新打开本页面。</p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+  let config = {};
+  let supabase = null;
+  let tables = [];
+  let activeIndex = 0;
+  let rows = [];
+  let editingRow = null;
+
+  function waitForBridge(){
+    let attempts = 0;
+    return new Promise((resolve) => {
+      function check(){
+        attempts++;
+        if (typeof Bridge !== 'undefined' && Bridge.getPluginConfig){
+          resolve(true);
+        } else if (attempts < 80){
+          setTimeout(check, 50);
+        } else {
+          resolve(false);
+        }
+      }
+      check();
+    });
+  }
+
+  async function loadConfig(){
+    const hasBridge = await waitForBridge();
+    if (!hasBridge){
+      showConfigMiss();
+      return false;
+    }
+    try{
+      const raw = await Bridge.getPluginConfig();
+      const cfg = (typeof raw === 'string' && raw.trim()) ? JSON.parse(raw) : (raw || {});
+      config = {
+        url: cfg.supabase_url || '',
+        key: cfg.supabase_key || '',
+        table1: cfg.table_1 || '',
+        table2: cfg.table_2 || ''
+      };
+      if (!config.url || !config.key || !config.table1 || !config.table2){
+        showConfigMiss();
+        return false;
+      }
+      tables = [config.table1, config.table2];
+      return true;
+    } catch(e){
+      showToast('读取配置失败: ' + e.message);
+      showConfigMiss();
+      return false;
+    }
+  }
+
+  function showConfigMiss(){
+    $('#configMiss').classList.remove('hidden');
+    $('#app').classList.add('hidden');
+  }
+
+  function initSupabase(){
+    try{
+      supabase = window.supabase.createClient(config.url, config.key);
+    } catch(e){
+      showToast('初始化 Supabase 失败: ' + e.message);
+      return false;
+    }
+    return true;
+  }
+
+  function renderTabs(){
+    const tabsEl = $('#tabs');
+    tabsEl.innerHTML = '';
+    tables.forEach((name, idx) => {
+      const btn = document.createElement('button');
+      btn.className = 'tab' + (idx === activeIndex ? ' active' : '');
+      btn.textContent = name;
+      btn.onclick = () => switchTab(idx);
+      tabsEl.appendChild(btn);
+    });
+  }
+
+  async function switchTab(idx){
+    activeIndex = idx;
+    renderTabs();
+    await loadTable();
+  }
+
+  function formatValue(v){
+    if (v === null || v === undefined) return { text: 'NULL', null: true };
+    if (typeof v === 'boolean') return { text: v ? 'true' : 'false' };
+    if (typeof v === 'object') return { text: JSON.stringify(v) };
+    return { text: String(v) };
+  }
+
+  function renderRows(){
+    const list = $('#list');
+    list.innerHTML = '';
+    if (!rows.length){
+      list.innerHTML = '<div class="empty">暂无数据</div>';
+      return;
+    }
+    rows.forEach((row) => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      const idVal = row.id !== undefined ? row.id : '—';
+
+      const head = document.createElement('div');
+      head.className = 'card-head';
+      head.innerHTML = `<div class="card-title">id: ${escapeHtml(String(idVal))}</div>`;
+
+      const actions = document.createElement('div');
+      actions.className = 'card-actions';
+      actions.innerHTML = `
+        <button class="iconbtn" title="编辑" data-act="edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>
+        <button class="iconbtn danger" title="删除" data-act="delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></svg></button>
+      `;
+      head.appendChild(actions);
+      card.appendChild(head);
+
+      const body = document.createElement('div');
+      body.className = 'card-body';
+      Object.keys(row).forEach((key) => {
+        if (key === 'id') return;
+        const f = document.createElement('div');
+        f.className = 'field';
+        const val = formatValue(row[key]);
+        f.innerHTML = `<div class="field-key">${escapeHtml(key)}</div><div class="field-val ${val.null ? 'null' : ''}">${escapeHtml(val.text)}</div>`;
+        body.appendChild(f);
+      });
+      card.appendChild(body);
+
+      actions.querySelector('[data-act="edit"]').onclick = () => openEdit(row);
+      actions.querySelector('[data-act="delete"]').onclick = () => deleteRow(row);
+      list.appendChild(card);
+    });
+  }
+
+  async function loadTable(){
+    const status = $('#statusText');
+    status.textContent = '读取中…';
+    try{
+      const { data, error } = await supabase.from(tables[activeIndex]).select('*').order('id', { ascending: false }).limit(200);
+      if (error) throw error;
+      rows = data || [];
+      renderRows();
+      status.textContent = `${tables[activeIndex]} · ${rows.length} 条记录`;
+    } catch(e){
+      status.textContent = '读取失败';
+      showToast('读取失败: ' + e.message);
+      console.error(e);
+    }
+  }
+
+  function escapeHtml(str){
+    return str
+      .split('&').join('\u0026amp;')
+      .split('<').join('\u0026lt;')
+      .split('>').join('\u0026gt;')
+      .split('"').join('\u0026quot;')
+      .split("'").join('\u0026#39;');
+  }
+
+  function openEdit(row){
+    editingRow = row || null;
+    $('#modalTitle').textContent = row ? '编辑记录' : '新增记录';
+    const body = $('#modalBody');
+    body.innerHTML = '';
+
+    const fields = row ? Object.keys(row) : [];
+    if (!row){
+      // 新增时如果表已有数据，拿第一条的字段作为模板
+      const template = rows[0] || {};
+      Object.keys(template).forEach((k) => {
+        if (k === 'id') return;
+        addFormField(body, k, '');
+      });
+      // 空表时给一个默认字段，并允许继续添加
+      if (!Object.keys(template).length){
+        addFormField(body, 'name', '');
+      }
+    } else {
+      fields.forEach((k) => {
+        if (k === 'id') return;
+        const v = formatValue(row[k]);
+        addFormField(body, k, v.null ? '' : v.text);
+      });
+    }
+
+    // 新增模式下允许动态添加字段
+    if (!row){
+      const addFieldRow = document.createElement('div');
+      addFieldRow.className = 'btn-row';
+      addFieldRow.style.marginTop = '10px';
+      addFieldRow.innerHTML = `<input class="form-input" id="newFieldName" placeholder="新字段名"><button class="btn btn-secondary" id="addFieldBtn" type="button">添加字段</button>`;
+      body.appendChild(addFieldRow);
+      $('#addFieldBtn').onclick = () => {
+        const name = $('#newFieldName').value.trim();
+        if (!name) return;
+        if (name === 'id'){ showToast('不能添加 id 字段'); return; }
+        const exists = $$('#modalBody [data-key]').some((el) => el.getAttribute('data-key') === name);
+        if (exists){ showToast('字段已存在'); return; }
+        addFieldRow.parentNode.insertBefore(createFormField(name, ''), addFieldRow);
+        $('#newFieldName').value = '';
+      };
+    }
+
+    const btnRow = document.createElement('div');
+    btnRow.className = 'btn-row';
+    btnRow.innerHTML = `<button class="btn btn-secondary" id="cancelBtn">取消</button><button class="btn btn-primary" id="saveBtn">保存</button>`;
+    body.appendChild(btnRow);
+
+    $('#cancelBtn').onclick = closeEdit;
+    $('#saveBtn').onclick = saveEdit;
+
+    $('#editModal').classList.add('open');
+    $('#editModal').setAttribute('aria-hidden', 'false');
+  }
+
+  function createFormField(key, value){
+    const wrap = document.createElement('div');
+    wrap.className = 'form-field';
+    const isLong = String(value).length > 40;
+    wrap.innerHTML = `
+      <label class="form-label">${escapeHtml(key)}</label>
+      ${isLong
+        ? `<textarea class="form-textarea" data-key="${escapeHtml(key)}" placeholder="${escapeHtml(key)}">${escapeHtml(value)}</textarea>`
+        : `<input class="form-input" data-key="${escapeHtml(key)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(key)}">`}
+    `;
+    return wrap;
+  }
+
+  function addFormField(body, key, value){
+    const wrap = document.createElement('div');
+    wrap.className = 'form-field';
+    const isLong = String(value).length > 40;
+    wrap.innerHTML = `
+      <label class="form-label">${escapeHtml(key)}</label>
+      ${isLong
+        ? `<textarea class="form-textarea" data-key="${escapeHtml(key)}" placeholder="${escapeHtml(key)}">${escapeHtml(value)}</textarea>`
+        : `<input class="form-input" data-key="${escapeHtml(key)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(key)}">`}
+    `;
+    body.appendChild(wrap);
+  }
+
+  function closeEdit(){
+    $('#editModal').classList.remove('open');
+    $('#editModal').setAttribute('aria-hidden', 'true');
+    editingRow = null;
+  }
+
+  async function saveEdit(){
+    const table = tables[activeIndex];
+    const inputs = $$('#modalBody [data-key]');
+    const payload = {};
+    inputs.forEach((inp) => {
+      const key = inp.getAttribute('data-key');
+      payload[key] = inp.value;
+    });
+
+    try{
+      if (editingRow && editingRow.id !== undefined){
+        const { error } = await supabase.from(table).update(payload).eq('id', editingRow.id);
+        if (error) throw error;
+        showToast('已更新');
+      } else {
+        const { error } = await supabase.from(table).insert(payload);
+        if (error) throw error;
+        showToast('已新增');
+      }
+      closeEdit();
+      await loadTable();
+    } catch(e){
+      showToast('保存失败: ' + e.message);
+      console.error(e);
+    }
+  }
+
+  async function deleteRow(row){
+    if (row.id === undefined){
+      showToast('无法删除：缺少 id 主键');
+      return;
+    }
+    if (!confirm('确定要删除这条记录吗？')) return;
+    try{
+      const { error } = await supabase.from(tables[activeIndex]).delete().eq('id', row.id);
+      if (error) throw error;
+      showToast('已删除');
+      await loadTable();
+    } catch(e){
+      showToast('删除失败: ' + e.message);
+      console.error(e);
+    }
+  }
+
+  let toastTimer = null;
+  function showToast(msg){
+    const t = $('#toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  function switchTheme(){
+    const root = document.documentElement;
+    const cur = root.getAttribute('data-theme') === 'harbor' ? 'light' : 'harbor';
+    root.setAttribute('data-theme', cur);
+    try{ localStorage.setItem('supabase_viewer_theme', cur); }catch(e){}
+  }
+
+  async function init(){
+    const ok = await loadConfig();
+    if (!ok) return;
+    if (!initSupabase()) return;
+    renderTabs();
+    $('#themeBtn').onclick = switchTheme;
+    $('#addBtn').onclick = () => openEdit(null);
+    $('#modalClose').onclick = closeEdit;
+    await loadTable();
+  }
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>

@@ -3,7 +3,11 @@ package me.rerere.rikkahub.workflow.trigger
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import me.rerere.rikkahub.workflow.model.TriggerSpec
 import me.rerere.rikkahub.workflow.model.WorkflowDefinition
 
@@ -19,6 +23,12 @@ import me.rerere.rikkahub.workflow.model.WorkflowDefinition
  * Battery hygiene: the accessibility service itself stays running for screen-automation
  * tools, so this family adds no resource cost when no workflows use it. The family just
  * stops dispatching when [matching] is empty.
+ *
+ * `app_foreground_duration`: when an app enters the foreground, a delayed coroutine is
+ * scheduled per matching workflow. If the app is *still* in the foreground after the
+ * delay, the workflow fires. If the user switched away before the delay elapsed, the
+ * coroutine is cancelled and the workflow does not fire — so it only triggers on
+ * *continuous* usage, not just a brief foreground visit.
  */
 internal class AppForegroundTriggerFamily(
     private val scope: CoroutineScope,
@@ -30,19 +40,36 @@ internal class AppForegroundTriggerFamily(
     @Volatile private var fireCallback: TriggerFireCallback? = null
     @Volatile private var lastForegroundPackage: String? = null
 
+    /** Active duration-timer jobs keyed by workflow id. Cancelled on app switch-out. */
+    private val durationJobs = mutableMapOf<String, Job>()
+    private val durationJobsMutex = Mutex()
+
     override fun handles(spec: TriggerSpec): Boolean =
-        spec is TriggerSpec.AppLaunched || spec is TriggerSpec.AppClosed
+        spec is TriggerSpec.AppLaunched ||
+            spec is TriggerSpec.AppClosed ||
+            spec is TriggerSpec.AppForegroundDuration
 
     override suspend fun sync(matching: List<WorkflowDefinition>, callback: TriggerFireCallback) {
         this.matching = matching
         this.fireCallback = callback
         AppForegroundDispatcher.bind(this)
+        // Cancel any duration timers for workflows that no longer exist / are disabled.
+        val liveIds = matching.map { it.id }.toSet()
+        durationJobsMutex.withLock {
+            durationJobs.keys.toList().filter { it !in liveIds }.forEach { id ->
+                durationJobs.remove(id)?.cancel()
+            }
+        }
     }
 
     override suspend fun shutdown() {
         matching = emptyList()
         fireCallback = null
         lastForegroundPackage = null
+        durationJobsMutex.withLock {
+            durationJobs.values.forEach { it.cancel() }
+            durationJobs.clear()
+        }
     }
 
     /** Called by [AppForegroundDispatcher.onForegroundChange] from accessibility service. */
@@ -55,6 +82,7 @@ internal class AppForegroundTriggerFamily(
         val snap = matching
         if (snap.isEmpty()) return
 
+        // --- app_launched / app_closed: fire immediately on transition ---
         val fires = mutableListOf<Pair<String, TriggerSpec>>()
         for (wf in snap) {
             when (val t = wf.trigger) {
@@ -65,13 +93,55 @@ internal class AppForegroundTriggerFamily(
                 else -> Unit
             }
         }
-        if (fires.isEmpty()) return
-        scope.launch(Dispatchers.IO) {
-            for ((wfId, spec) in fires) {
-                runCatching { cb.onFire(wfId, spec) }.onFailure {
-                    Log.w(TAG, "app_foreground: fire failed for wf=$wfId", it)
+        if (fires.isNotEmpty()) {
+            scope.launch(Dispatchers.IO) {
+                for ((wfId, spec) in fires) {
+                    runCatching { cb.onFire(wfId, spec) }.onFailure {
+                        Log.w(TAG, "app_foreground: fire failed for wf=$wfId", it)
+                    }
                 }
             }
+        }
+
+        // --- app_foreground_duration: schedule delayed timers for the newly-foreground app ---
+        scope.launch(Dispatchers.IO) { scheduleDurationTimers(newPackage) }
+    }
+
+    /**
+     * For every `app_foreground_duration` workflow targeting [packageName], start a delayed
+     * coroutine. When the delay elapses, re-check that [AppForegroundLastKnown] still points
+     * at [packageName] (user hasn't switched away) before firing.
+     */
+    private suspend fun scheduleDurationTimers(packageName: String) {
+        val cb = fireCallback ?: return
+        val snap = matching
+        val durationSpecs = snap.mapNotNull { wf ->
+            val t = wf.trigger as? TriggerSpec.AppForegroundDuration ?: return@mapNotNull null
+            if (t.packageName == packageName) wf.id to t else null
+        }
+        if (durationSpecs.isEmpty()) return
+
+        // Cancel stale timers from the previous foreground app before starting new ones.
+        // (durationJobs only holds timers for the *current* foreground app; switching away
+        // cancels them in the branch below, but we double-check here for safety.)
+        durationJobsMutex.withLock {
+            durationJobs.values.forEach { it.cancel() }
+            durationJobs.clear()
+        }
+
+        for ((wfId, spec) in durationSpecs) {
+            val job = scope.launch(Dispatchers.IO) {
+                delay(spec.minutes.toLong() * 60_000L)
+                // Re-check: is the app still in the foreground?
+                if (AppForegroundLastKnown.value == spec.packageName) {
+                    runCatching { cb.onFire(wfId, spec) }.onFailure {
+                        Log.w(TAG, "app_foreground_duration: fire failed for wf=$wfId", it)
+                    }
+                }
+                // Timer consumed — clean up its own entry.
+                durationJobsMutex.withLock { durationJobs.remove(wfId) }
+            }
+            durationJobsMutex.withLock { durationJobs[wfId] = job }
         }
     }
 
@@ -90,11 +160,11 @@ object AppForegroundDispatcher {
 
     /**
      * Track how many workflows currently NEED the foreground-package cache. The trigger
-     * registry calls this on every resync - if zero workflows have an `app_launched`/`_closed`
-     * trigger AND no condition uses `foreground_app_*`, the dispatcher's hot path can no-op
-     * entirely. Without this gate the accessibility service writes the volatile cache on
-     * every TYPE_WINDOW_STATE_CHANGED event (which fires multiple times per app switch +
-     * every dialog/menu pop), paying 24/7 for a feature most users won't enable.
+     * registry calls this on every resync - if zero workflows have an `app_launched`/`_closed`/
+     * `_foreground_duration` trigger AND no condition uses `foreground_app_*`, the dispatcher's
+     * hot path can no-op entirely. Without this gate the accessibility service writes the
+     * volatile cache on every TYPE_WINDOW_STATE_CHANGED event (which fires multiple times per
+     * app switch + every dialog/menu pop), paying 24/7 for a feature most users won't enable.
      */
     internal fun setForegroundConsumerCount(n: Int) { foregroundConsumerCount = n }
 

@@ -287,6 +287,19 @@ class ChatCompletionsAPI(
                     close(error)
                     return
                 }
+                // 某些网关 (如 silas.zeabur.app) 在上游调用失败时, 不返回标准 error 字段,
+                // 而是把错误信息伪装成正常的 content delta 返回 (id="chatcmpl-error")。
+                // 如果不拦截, 错误信息会被当成 AI 正常回复存入历史, 导致后续请求全部失败。
+                val chunkId = chunkJson["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                if (chunkId == "chatcmpl-error") {
+                    val errorContent = chunkJson["choices"]?.jsonArray?.getOrNull(0)
+                        ?.jsonObject?.get("delta")?.jsonObject?.get("content")
+                        ?.jsonPrimitive?.contentOrNull ?: "unknown gateway error"
+                    Log.e(TAG, "onEvent: gateway returned error disguised as content: $errorContent")
+                    Logging.log(TAG, "onEvent: gateway error disguised as content: $errorContent")
+                    close(Exception("Gateway error: $errorContent"))
+                    return
+                }
                 val id = chunkJson["id"]?.jsonPrimitive?.contentOrNull ?: ""
                 val model = chunkJson["model"]?.jsonPrimitive?.contentOrNull ?: ""
 
@@ -377,9 +390,15 @@ class ChatCompletionsAPI(
         val host = providerSetting.baseUrl.toHttpUrl().host
         return buildJsonObject {
             put("model", params.model.modelId)
-            put("messages", buildMessages(messages))
+            put("messages", buildMessages(messages, params.model))
 
-            if (isModelAllowTemperature(params.model)) {
+            // 智谱 GLM 等 thinking 模型在开启深度思考时不允许设置 temperature/top_p,
+            // 否则触发 "Invalid request body" (InvalidParameter) 400。
+            // moonshot/deepseek 的 thinking 字段结构与智谱一致, 一并处理。
+            val thinkingEnabled = params.model.abilities.contains(ModelAbility.REASONING) &&
+                params.reasoningLevel.isEnabled &&
+                host in setOf("open.bigmodel.cn", "api.moonshot.cn", "api.deepseek.com")
+            if (isModelAllowTemperature(params.model) && !thinkingEnabled) {
                 if (params.temperature != null) put("temperature", params.temperature)
                 if (params.topP != null) put("top_p", params.topP)
             }
@@ -533,12 +552,19 @@ class ChatCompletionsAPI(
                             put("function", buildJsonObject {
                                 put("name", tool.name)
                                 put("description", tool.description)
-                                put(
-                                    "parameters",
-                                    json.encodeToJsonElement(
-                                        tool.parameters()
-                                    )
-                                )
+                                // parameters() may return null (e.g. MCP gateway tools without
+                                // inputSchema). Serializing null → "parameters": null is rejected
+                                // by strict providers (Zhipu GLM returns "Invalid request body").
+                                // Fall back to an empty object schema so the request is always valid.
+                                val schema = tool.parameters()
+                                if (schema != null) {
+                                    put("parameters", json.encodeToJsonElement(schema))
+                                } else {
+                                    put("parameters", buildJsonObject {
+                                        put("type", "object")
+                                        put("properties", buildJsonObject { })
+                                    })
+                                }
                             })
                         })
                     }
@@ -551,19 +577,23 @@ class ChatCompletionsAPI(
         return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId)
     }
 
-    private fun buildMessages(messages: List<UIMessage>) = buildJsonArray {
+    private fun buildMessages(messages: List<UIMessage>, model: Model) = buildJsonArray {
         val filteredMessages = messages.filter { it.isValidToUpload() }
+        // 纯文本模型 (如 GLM-5.2) 不接受 image_url, 收到会报 "Model only support text input"。
+        // OcrTransformer 只覆盖 file: 图片, http/base64 图片会漏网; 这里在序列化层兜底,
+        // 模型不支持 IMAGE 时直接跳过 Image part, 不再发给 API。
+        val supportsImage = model.inputModalities.contains(Modality.IMAGE)
 
         filteredMessages.forEach { message ->
             if (message.role == MessageRole.ASSISTANT) {
-                addAssistantMessages(message, includeReasoning = true)
+                addAssistantMessages(message, includeReasoning = true, supportsImage = supportsImage)
             } else {
-                addNonAssistantMessage(message)
+                addNonAssistantMessage(message, supportsImage = supportsImage)
             }
         }
     }
 
-    private fun JsonArrayBuilder.addAssistantMessages(message: UIMessage, includeReasoning: Boolean) {
+    private fun JsonArrayBuilder.addAssistantMessages(message: UIMessage, includeReasoning: Boolean, supportsImage: Boolean = true) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
         var reasoningPart: UIMessagePart.Reasoning? = null
@@ -578,7 +608,7 @@ class ChatCompletionsAPI(
                         }
                     }
                     group.parts
-                        .filter { it is UIMessagePart.Text || it is UIMessagePart.Image }
+                        .filter { it is UIMessagePart.Text || (supportsImage && it is UIMessagePart.Image) }
                         .forEach { contentBuffer.add(it) }
                 }
 
@@ -587,7 +617,8 @@ class ChatCompletionsAPI(
                     buildAssistantMessageJson(
                         contentParts = contentBuffer,
                         tools = group.tools,
-                        reasoningPart = reasoningPart
+                        reasoningPart = reasoningPart,
+                        supportsImage = supportsImage,
                     )?.let { assistantMessage ->
                         add(assistantMessage)
                     }
@@ -597,7 +628,7 @@ class ChatCompletionsAPI(
                     // 紧跟 tool 结果消息
                     group.tools.forEach { tool ->
                         val textOutput = tool.output.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
-                        val imageOutput = tool.output.filterIsInstance<UIMessagePart.Image>()
+                        val imageOutput = if (supportsImage) tool.output.filterIsInstance<UIMessagePart.Image>() else emptyList()
 
                         add(buildJsonObject {
                             put("role", "tool")
@@ -642,7 +673,8 @@ class ChatCompletionsAPI(
             buildAssistantMessageJson(
                 contentParts = contentBuffer,
                 tools = emptyList(),
-                reasoningPart = reasoningPart
+                reasoningPart = reasoningPart,
+                supportsImage = supportsImage,
             )?.let { assistantMessage ->
                 add(assistantMessage)
             }
@@ -652,12 +684,13 @@ class ChatCompletionsAPI(
     private fun buildAssistantMessageJson(
         contentParts: List<UIMessagePart>,
         tools: List<UIMessagePart.Tool>,
-        reasoningPart: UIMessagePart.Reasoning?
+        reasoningPart: UIMessagePart.Reasoning?,
+        supportsImage: Boolean = true,
     ): JsonObject? {
         val hasUsableContent = contentParts.any { part ->
             when (part) {
                 is UIMessagePart.Text -> part.text.isNotBlank()
-                is UIMessagePart.Image -> part.url.isNotBlank()
+                is UIMessagePart.Image -> supportsImage && part.url.isNotBlank()
                 else -> false
             }
         }
@@ -691,18 +724,21 @@ class ChatCompletionsAPI(
                             }
 
                             is UIMessagePart.Image -> {
-                                add(buildJsonObject {
-                                    part.encodeBase64().onSuccess { encodedImage ->
-                                        put("type", "image_url")
-                                        put("image_url", buildJsonObject {
-                                            put("url", encodedImage.base64)
-                                        })
-                                    }.onFailure {
-                                        it.printStackTrace()
-                                        put("type", "text")
-                                        put("text", "")
-                                    }
-                                })
+                                if (supportsImage) {
+                                    add(buildJsonObject {
+                                        part.encodeBase64().onSuccess { encodedImage ->
+                                            put("type", "image_url")
+                                            put("image_url", buildJsonObject {
+                                                put("url", encodedImage.base64)
+                                            })
+                                        }.onFailure {
+                                            it.printStackTrace()
+                                            put("type", "text")
+                                            put("text", "")
+                                        }
+                                    })
+                                }
+                                // 模型不支持图片时跳过, 不序列化 image_url
                             }
 
                             else -> {}
@@ -729,15 +765,17 @@ class ChatCompletionsAPI(
         }
     }
 
-    private fun JsonArrayBuilder.addNonAssistantMessage(message: UIMessage) {
+    private fun JsonArrayBuilder.addNonAssistantMessage(message: UIMessage, supportsImage: Boolean = true) {
         add(buildJsonObject {
             put("role", JsonPrimitive(message.role.name.lowercase()))
 
-            if (message.parts.isOnlyTextPart()) {
-                put("content", message.parts.filterIsInstance<UIMessagePart.Text>().first().text)
+            // 模型不支持图片时, 先过滤掉 Image part, 避免发送 image_url 触发 "Model only support text input"
+            val parts = if (supportsImage) message.parts else message.parts.filter { it !is UIMessagePart.Image }
+            if (parts.isOnlyTextPart()) {
+                put("content", parts.filterIsInstance<UIMessagePart.Text>().first().text)
             } else {
                 putJsonArray("content") {
-                    message.parts.forEach { part ->
+                    parts.forEach { part ->
                         when (part) {
                             is UIMessagePart.Text -> {
                                 add(buildJsonObject {

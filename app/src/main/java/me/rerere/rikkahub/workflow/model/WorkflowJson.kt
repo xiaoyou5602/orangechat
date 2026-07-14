@@ -381,6 +381,13 @@ object WorkflowJson {
             ParseResult.Err("invalid_trigger", "app_launched.package_name must be non-blank") else null
         is TriggerSpec.AppClosed -> if (t.packageName.isBlank())
             ParseResult.Err("invalid_trigger", "app_closed.package_name must be non-blank") else null
+        is TriggerSpec.AppForegroundDuration -> when {
+            t.packageName.isBlank() ->
+                ParseResult.Err("invalid_trigger", "app_foreground_duration.package_name must be non-blank")
+            t.minutes < 1 ->
+                ParseResult.Err("invalid_trigger", "app_foreground_duration.minutes must be ≥ 1")
+            else -> null
+        }
         is TriggerSpec.NotificationReceived -> when {
             // At least one filter — otherwise the workflow fires on every notification.
             t.packageName.isNullOrBlank() && t.titleContains.isNullOrBlank()
@@ -436,6 +443,8 @@ object WorkflowJson {
             ParseResult.Err("invalid_condition", "foreground_app_is.package_name must be non-blank") else null
         is ConditionSpec.ForegroundAppIn -> if (c.packageNames.isEmpty() || c.packageNames.any { it.isBlank() })
             ParseResult.Err("invalid_condition", "foreground_app_in.package_names must be non-empty and non-blank") else null
+        is ConditionSpec.LastChatAgo -> if (c.minutes < 1)
+            ParseResult.Err("invalid_condition", "last_chat_ago.minutes must be ≥ 1") else null
         else -> null
     }
 

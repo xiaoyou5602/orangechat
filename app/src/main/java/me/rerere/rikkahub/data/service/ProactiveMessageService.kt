@@ -55,6 +55,7 @@ import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.plugin.provider.PluginToolProvider
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.data.datastore.ProactiveMessageSetting
@@ -562,9 +563,11 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 val tools = buildTools(settings, assistant, model)
 
                 // 主动消息场景：支持工具调用，但限制最大步数
+                // temperature 不强制默认 0.8f，保持与 GenerationHandler 一致（assistant.temperature 为 null 时不传），
+                // 否则对智谱 GLM 等 thinking 模型会同时下发 temperature + thinking，触发 "Invalid request body" 400。
                 val params = TextGenerationParams(
                     model = model,
-                    temperature = assistant.temperature ?: 0.8f,
+                    temperature = assistant.temperature,
                     topP = assistant.topP,
                     maxTokens = assistant.maxTokens,
                     tools = tools,
@@ -579,7 +582,12 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     }
                 )
 
-                Log.d(TAG, "Calling AI API for proactive message with ${historyMessages.size} history messages, ${tools.size} tools (reasoning=${assistant.reasoningLevel})...")
+                Log.d(TAG, "Calling AI API for proactive message with ${historyMessages.size} history messages, ${tools.size} tools (reasoning=${assistant.reasoningLevel}, model=${model.modelId}, provider=${providerSetting::class.simpleName})...")
+                // 诊断: 列出工具及其 parameters 是否为 null, 便于定位 "Invalid request body"
+                tools.forEach { t ->
+                    val hasSchema = t.parameters() != null
+                    if (!hasSchema) Log.w(TAG, "Tool '${t.name}' has NULL parameters schema — may cause API rejection")
+                }
 
                 // 把数据库里的完整对话同步到 session，防止流式更新时 conv 是空状态导致覆盖历史
                 chatService.addConversationReference(conversationId)
@@ -704,6 +712,38 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 }
             } catch (e: Exception) {
                 Log.e(ProactiveMessageService.TAG, "Failed to trigger proactive message", e)
+                // 如果是 API 返回的 HTTP 错误, 把原始错误体也打出来便于定位
+                val cause = e.cause
+                if (cause != null) {
+                    Log.e(ProactiveMessageService.TAG, "Underlying cause: ${cause::class.simpleName}: ${cause.message}", cause)
+                }
+                // 清理本次触发中流式写入的不完整/错误 AI 消息, 防止它们污染历史导致下一轮请求失败
+                conversationId?.let { cid ->
+                    try {
+                        val session = chatService.getOrCreateSession(cid)
+                        session.saveMutex.withLock {
+                            val conv = chatService.getConversationFlow(cid).value
+                            // 移除包含网关错误信息的消息 (防止污染下一轮请求)
+                            val updatedNodes = conv.messageNodes.filterNot { node ->
+                                node.messages.any { msg ->
+                                    msg.parts.any { part ->
+                                        (part is UIMessagePart.Text && (
+                                            part.text.contains("呼叫大模型时被拒绝了") ||
+                                            part.text.contains("Invalid request body")
+                                        ))
+                                    }
+                                }
+                            }
+                            if (updatedNodes.size != conv.messageNodes.size) {
+                                chatService.updateConversation(cid, conv.copy(messageNodes = updatedNodes))
+                                chatService.saveConversation(cid, chatService.getConversationFlow(cid).value)
+                                Log.d(ProactiveMessageService.TAG, "Cleaned up error messages from conversation history")
+                            }
+                        }
+                    } catch (cleanupErr: Exception) {
+                        Log.w(ProactiveMessageService.TAG, "Failed to cleanup error messages", cleanupErr)
+                    }
+                }
             } finally {
                 // 确保无论成功/失败都安排下一次，避免一次 API 错误（如 400）永久中断定时链
                 // 激进模式设备事件触发时不需要安排下一次定时主动消息（由 DeviceEventAiTriggerService 自己驱动）
@@ -869,16 +909,13 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
     }
 
     /**
-     * 构建工具列表（与 ChatService 保持一致）
+     * 构建工具列表（主动消息场景精简版）
+     * 只加载系统工具 + 本地工具 + MCP 工具 + 插件工具，不加载搜索/Skill 工具，
+     * 避免工具过多导致请求体过大触发 API 400。
      */
     private suspend fun buildTools(settings: Settings, assistant: Assistant, model: Model): List<Tool> {
         return buildList {
-            // 搜索工具
-            if (settings.enableWebSearch) {
-                addAll(createSearchTools(settings))
-            }
-
-            // 本地工具
+            // 本地工具（助手已启用的）
             addAll(localTools.getTools(assistant.localTools))
 
             // 系统工具（位置、通知、日历、闹钟、相机）
@@ -886,17 +923,6 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
             if (systemToolsOptions.isNotEmpty()) {
                 val systemTools = SystemTools(this@ProactiveMessageTriggerService, settings)
                 addAll(systemTools.getTools(systemToolsOptions))
-            }
-
-            // Skill 工具
-            if (assistant.enabledSkills.isNotEmpty()) {
-                addAll(
-                    createSkillTools(
-                        enabledSkills = assistant.enabledSkills,
-                        allSkills = skillManager.listSkills(),
-                        skillManager = skillManager,
-                    )
-                )
             }
 
             // MCP 工具
@@ -1112,7 +1138,13 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 } else {
                     // 执行工具
                     try {
-                        val args = json.parseToJsonElement(toolCall.input.ifBlank { "{}" })
+                        val args = try {
+                            json.parseToJsonElement(toolCall.input.ifBlank { "{}" })
+                        } catch (e: Exception) {
+                            // toolCall.input 可能因为流式截断而是不完整的 JSON, 回退为空对象
+                            Log.w(TAG, "Tool ${toolCall.toolName} input JSON is incomplete, falling back to empty object: ${toolCall.input.take(200)}")
+                            JsonObject(emptyMap())
+                        }
                         Log.d(TAG, "Executing tool ${toolDef.name} with args: $args")
                         val result = toolDef.execute(args)
                         executedTools.add(toolCall.copy(output = result))

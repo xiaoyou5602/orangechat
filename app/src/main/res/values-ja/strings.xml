@@ -155,6 +155,8 @@
   <string name="assistant_page_use_assistant_avatar_desc">チャットでモデルアバターと名前ではなくアシスタントアバターと名前を使用</string>
   <string name="assistant_page_split_bubble_by_line_title">行ごとに吹き出しを分割</string>
   <string name="assistant_page_split_bubble_by_line_desc">モデル自身が書いた改行ごとに返信を個別のチャット吹き出しに分割します</string>
+  <string name="assistant_page_split_user_bubble_by_line_title">ユーザーメッセージを行ごとに分割</string>
+  <string name="assistant_page_split_user_bubble_by_line_desc">送信したメッセージを改行ごとに個別のチャット吹き出しに分割します</string>
   <string name="audio">音声</string>
   <string name="avatar_cancel">キャンセル</string>
   <string name="avatar_change_avatar">アバターを変更</string>

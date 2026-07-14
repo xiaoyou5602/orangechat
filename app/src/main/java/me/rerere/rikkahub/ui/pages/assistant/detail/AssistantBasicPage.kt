@@ -250,6 +250,28 @@ internal fun AssistantBasicContent(
                     )
                 }
             )
+
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_split_user_bubble_by_line_title))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_split_user_bubble_by_line_desc))
+                },
+                tail = {
+                    Switch(
+                        checked = assistant.splitUserBubbleByLine,
+                        onCheckedChange = {
+                            onUpdate(
+                                assistant.copy(
+                                    splitUserBubbleByLine = it
+                                )
+                            )
+                        }
+                    )
+                }
+            )
         }
  
         Card(

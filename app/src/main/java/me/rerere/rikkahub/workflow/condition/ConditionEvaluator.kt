@@ -67,15 +67,23 @@ object ConditionEvaluator {
             is ConditionSpec.IsCharging -> ctx.isCharging
             is ConditionSpec.IsNotCharging -> !ctx.isCharging
             is ConditionSpec.ForegroundAppIs -> ctx.foregroundPackage == condition.packageName
-            is ConditionSpec.ForegroundAppIn -> ctx.foregroundPackage != null && ctx.foregroundPackage in condition.packageNames
+            is ConditionSpec.ForegroundAppIn -> ctx.foregroundPackage != null && condition.packageNames.any { it == ctx.foregroundPackage }
             is ConditionSpec.ScreenIsOn -> ctx.screenOn
             is ConditionSpec.ScreenIsOff -> !ctx.screenOn
+            // Fail open when there is no chat history (null) — a brand-new install shouldn't be
+            // permanently blocked from firing workflows that happen to also check last-chat.
+            is ConditionSpec.LastChatAgo -> ctx.lastChatMs == null ||
+                (ctx.nowMs - ctx.lastChatMs) >= condition.minutes * 60_000L
         }
     }
 
     /** Whether any condition in [conditions] needs a location lookup. */
     fun needsLocation(conditions: List<ConditionSpec>): Boolean =
         conditions.any { it is ConditionSpec.TimeAfterSunset || it is ConditionSpec.TimeBeforeSunrise }
+
+    /** Whether any condition in [conditions] needs the last-chat-time DB lookup. */
+    fun needsLastChat(conditions: List<ConditionSpec>): Boolean =
+        conditions.any { it is ConditionSpec.LastChatAgo }
 
     /**
      * "HH:mm" between handler. If [start] > [end] (e.g. 22:00..06:00), wrap past midnight
@@ -122,6 +130,7 @@ object ConditionEvaluator {
             is ConditionSpec.ForegroundAppIn -> "foreground app in ${c.packageNames.size} pkgs"
             is ConditionSpec.ScreenIsOn -> "screen on"
             is ConditionSpec.ScreenIsOff -> "screen off"
+            is ConditionSpec.LastChatAgo -> "last chat ≥ ${c.minutes}m ago"
         }
         return if (c.invert) "NOT ($base)" else base
     }

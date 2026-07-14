@@ -155,6 +155,8 @@
   <string name="assistant_page_use_assistant_avatar_desc">在聊天中使用助手頭像和名字而不是模型頭像和名字</string>
   <string name="assistant_page_split_bubble_by_line_title">按行拆分氣泡</string>
   <string name="assistant_page_split_bubble_by_line_desc">將助手回覆按模型自己寫的換行拆分成多個獨立氣泡發送</string>
+  <string name="assistant_page_split_user_bubble_by_line_title">使用者訊息按行拆分氣泡</string>
+  <string name="assistant_page_split_user_bubble_by_line_desc">將你發送的訊息按換行拆分成多個獨立氣泡顯示</string>
   <string name="audio">音訊</string>
   <string name="avatar_cancel">取消</string>
   <string name="avatar_change_avatar">更換頭像</string>

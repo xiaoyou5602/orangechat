@@ -306,6 +306,7 @@ private fun conditionLine(c: me.rerere.rikkahub.workflow.model.ConditionSpec): S
         is me.rerere.rikkahub.workflow.model.ConditionSpec.ForegroundAppIn -> "前台应用在 ${c.packageNames.size} 个应用中"
         is me.rerere.rikkahub.workflow.model.ConditionSpec.ScreenIsOn -> "屏幕点亮"
         is me.rerere.rikkahub.workflow.model.ConditionSpec.ScreenIsOff -> "屏幕熄灭"
+        is me.rerere.rikkahub.workflow.model.ConditionSpec.LastChatAgo -> "距上次聊天 ≥ ${c.minutes} 分钟"
     }
     return if (c.invert) "非（$base）" else base
 }

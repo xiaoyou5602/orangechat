@@ -172,7 +172,10 @@ class WorkflowEngine(
 
         // Conditions
         if (def.conditions.isNotEmpty()) {
-            val ctx = contextProvider.snapshot(needsLocation = ConditionEvaluator.needsLocation(def.conditions))
+            val ctx = contextProvider.snapshot(
+                needsLocation = ConditionEvaluator.needsLocation(def.conditions),
+                needsLastChat = ConditionEvaluator.needsLastChat(def.conditions),
+            )
             val cr = ConditionEvaluator.evaluateAll(def.conditions, ctx)
             if (cr is ConditionEvaluator.Result.FailedAt) {
                 return persistAndReturn(
@@ -263,9 +266,10 @@ class WorkflowEngine(
                 } else null
             }
             is me.rerere.rikkahub.workflow.model.TriggerSpec.AppLaunched,
-            is me.rerere.rikkahub.workflow.model.TriggerSpec.AppClosed -> {
+            is me.rerere.rikkahub.workflow.model.TriggerSpec.AppClosed,
+            is me.rerere.rikkahub.workflow.model.TriggerSpec.AppForegroundDuration -> {
                 if (!me.rerere.rikkahub.data.ai.tools.local.AccessibilityServiceHandle.isRunning()) {
-                    "accessibility_not_enabled: enable the RikkaHub accessibility service in Settings → Accessibility (required for app_launched / app_closed triggers)"
+                    "accessibility_not_enabled: enable the RikkaHub accessibility service in Settings → Accessibility (required for app_launched / app_closed / app_foreground_duration triggers)"
                 } else null
             }
             is me.rerere.rikkahub.workflow.model.TriggerSpec.BluetoothDeviceConnected,

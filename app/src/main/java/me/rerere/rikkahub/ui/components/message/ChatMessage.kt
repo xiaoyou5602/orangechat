@@ -389,22 +389,56 @@ private fun MessagePartsBlock(
                         SelectionContainer {
                             Column {
                                 if (role == MessageRole.USER) {
-                                    BubbleSurface(
-                                        imagePath = displaySettings.userBubbleImagePath,
-                                        cornerRadius = displaySettings.bubbleCornerRadius.dp,
-                                        color = displaySettings.userBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.secondaryContainer,
-                                        overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
-                                        bubbleAlpha = bubbleAlpha,
-                                        onClick = { onUserMessageClick?.invoke() },
-                                    ) {
-                                        MarkdownBlock(
-                                            content = displayText.replaceRegexes(
-                                                assistant = assistant,
-                                                scope = AssistantAffectScope.USER,
-                                                visual = true,
-                                            ),
-                                            onClickCitation = handleClickCitation
-                                        )
+                                    if (assistant?.splitUserBubbleByLine == true) {
+                                        // 分气泡: 按用户输入的换行 (\n) 拆成多个独立气泡,
+                                        // 拆分逻辑见 splitIntoBubbleSegments (会保护代码块/表格内部的换行)
+                                        val bubbleSegments = remember(displayText) {
+                                            displayText.splitIntoBubbleSegments()
+                                        }
+                                        Column(
+                                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                                            horizontalAlignment = Alignment.End,
+                                        ) {
+                                            bubbleSegments.fastForEachIndexed { segIndex, segment ->
+                                                key(segIndex) {
+                                                    BubbleSurface(
+                                                        imagePath = displaySettings.userBubbleImagePath,
+                                                        cornerRadius = displaySettings.bubbleCornerRadius.dp,
+                                                        color = displaySettings.userBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.secondaryContainer,
+                                                        overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
+                                                        bubbleAlpha = bubbleAlpha,
+                                                        onClick = { onUserMessageClick?.invoke() },
+                                                    ) {
+                                                        MarkdownBlock(
+                                                            content = segment.replaceRegexes(
+                                                                assistant = assistant,
+                                                                scope = AssistantAffectScope.USER,
+                                                                visual = true,
+                                                            ),
+                                                            onClickCitation = handleClickCitation
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        BubbleSurface(
+                                            imagePath = displaySettings.userBubbleImagePath,
+                                            cornerRadius = displaySettings.bubbleCornerRadius.dp,
+                                            color = displaySettings.userBubbleColor?.let { it.toComposeColor() } ?: MaterialTheme.colorScheme.secondaryContainer,
+                                            overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
+                                            bubbleAlpha = bubbleAlpha,
+                                            onClick = { onUserMessageClick?.invoke() },
+                                        ) {
+                                            MarkdownBlock(
+                                                content = displayText.replaceRegexes(
+                                                    assistant = assistant,
+                                                    scope = AssistantAffectScope.USER,
+                                                    visual = true,
+                                                ),
+                                                onClickCitation = handleClickCitation
+                                            )
+                                        }
                                     }
                                 } else if (assistant?.splitBubbleByLine == true) {
                                     // 分气泡: 按模型自己写的换行 (\n) 拆成多个独立气泡,

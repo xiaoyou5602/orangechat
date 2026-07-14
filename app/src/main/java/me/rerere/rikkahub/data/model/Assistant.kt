@@ -47,6 +47,7 @@ data class Assistant(
     val allowSkipReply: Boolean = false,
     val externalMemoryIds: Set<Uuid> = emptySet(),      // 关联的外置记忆库 ID
     val splitBubbleByLine: Boolean = false,             // 按模型自己写的换行拆分成多个独立气泡
+    val splitUserBubbleByLine: Boolean = false,         // 用户消息按换行拆分成多个独立气泡
 )
  
 @Serializable

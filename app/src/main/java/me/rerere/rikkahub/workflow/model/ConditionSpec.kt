@@ -112,4 +112,12 @@ sealed class ConditionSpec {
     @Serializable
     @SerialName("screen_is_off")
     data class ScreenIsOff(override val invert: Boolean = false) : ConditionSpec()
+
+    /** True when the last chat message in the app was ≥ [minutes] ago. Fails open (= true) when no chat history exists. */
+    @Serializable
+    @SerialName("last_chat_ago")
+    data class LastChatAgo(
+        val minutes: Long,
+        override val invert: Boolean = false,
+    ) : ConditionSpec()
 }

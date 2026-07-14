@@ -12,25 +12,39 @@ import android.os.BatteryManager
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.flow.first
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.workflow.model.WorkflowContext
 
 /**
  * Phase 12 — builds a [WorkflowContext] snapshot at evaluation time.
  *
  * Cheap fields (battery, charging, screen, wifi SSID best-effort) are always populated.
- * Expensive fields (location, foreground app) are populated only on request — the engine
- * passes a flag indicating which the conditions actually need, so we don't pay for a
- * location lookup on a workflow that only checks battery.
+ * Expensive fields (location, foreground app, last-chat time) are populated only on request —
+ * the engine passes flags indicating which the conditions actually need, so we don't pay for a
+ * location lookup or DB query on a workflow that only checks battery.
  */
-class ContextProvider(private val context: Context) {
+class ContextProvider(
+    private val context: Context,
+    private val settingsStore: SettingsStore,
+    private val conversationRepository: ConversationRepository,
+) {
 
-    fun snapshot(needsLocation: Boolean = false): WorkflowContext {
+    suspend fun snapshot(
+        needsLocation: Boolean = false,
+        needsLastChat: Boolean = false,
+    ): WorkflowContext {
         val now = System.currentTimeMillis()
         val (level, charging) = batteryStatus()
         val ssid = currentWifiSsid()
         val screenOn = isScreenOn()
         val foregroundPackage = me.rerere.rikkahub.workflow.trigger.AppForegroundLastKnown.value
         val (lat, lng) = if (needsLocation) lastKnownLocation() else (null to null)
+        val lastChat = if (needsLastChat) lastChatMessageMs() else null
         return WorkflowContext(
             nowMs = now,
             batteryLevel = level,
@@ -40,7 +54,31 @@ class ContextProvider(private val context: Context) {
             screenOn = screenOn,
             latitude = lat,
             longitude = lng,
+            lastChatMs = lastChat,
         )
+    }
+
+    /**
+     * Epoch ms of the last message in the current assistant's most-recent conversation.
+     * Mirrors [me.rerere.rikkahub.data.service.ProactiveMessageService.getLastMessageTime]
+     * but lives here so the workflow condition evaluator can access it without going through
+     * the proactive-message service. Returns null when there is no conversation / no message.
+     */
+    @SuppressLint("VisibleForTests")
+    private suspend fun lastChatMessageMs(): Long? = try {
+        val assistantId = settingsStore.settingsFlow.first().assistantId
+        val recent = conversationRepository.getRecentConversations(assistantId, limit = 1)
+        if (recent.isEmpty()) null
+        else {
+            val conv = recent.first()
+            val fullConv = conversationRepository.getConversationById(conv.id)
+            val createdAt: LocalDateTime? =
+                fullConv?.messageNodes?.lastOrNull()?.messages?.lastOrNull()?.createdAt
+            createdAt?.toInstant(TimeZone.currentSystemDefault())?.toEpochMilliseconds()
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "lastChatMessageMs: lookup failed", e)
+        null
     }
 
     @SuppressLint("MissingPermission")

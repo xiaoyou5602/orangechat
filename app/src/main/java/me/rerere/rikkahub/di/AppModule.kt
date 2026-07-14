@@ -45,7 +45,7 @@ val appModule = module {
             workflowRunDao = get<me.rerere.rikkahub.data.db.AppDatabase>().workflowRunDao(),
         )
     }
-    single { me.rerere.rikkahub.workflow.condition.ContextProvider(get()) }
+    single { me.rerere.rikkahub.workflow.condition.ContextProvider(get(), get(), get()) }
     single { me.rerere.rikkahub.workflow.execution.WorkflowActionRunner() }
     single {
         me.rerere.rikkahub.workflow.execution.WorkflowEngine(

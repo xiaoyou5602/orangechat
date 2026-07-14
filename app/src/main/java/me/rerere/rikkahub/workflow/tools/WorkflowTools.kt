@@ -64,6 +64,10 @@ fun workflowCreateTool(
           battery_below / battery_above — params: threshold_percent (1..100), fires on transition
           geofence_enter / geofence_exit — params: lat, lng, radius_m (50..5000), label (optional)
           app_launched / app_closed — params: package_name
+          app_foreground_duration — params: package_name, minutes. Fires when the app has
+              stayed continuously in the foreground for ≥ minutes. Use this (not app_launched)
+              when you need "still using after a while" semantics, e.g. remind first, then
+              lock only if the user keeps using.
           notification_received — params: at least one of package_name, title_contains,
               text_contains, title_matches, text_matches. The *_contains fields match a
               case-insensitive substring; the *_matches fields hold a Java regex tested
@@ -82,6 +86,9 @@ fun workflowCreateTool(
           is_charging / is_not_charging
           foreground_app_is / foreground_app_in
           screen_is_on / screen_is_off
+          last_chat_ago (minutes) — true when the user's last message in this app was ≥ minutes
+              ago. Useful for "user hasn't chatted for a while" guards, e.g. only lock social
+              apps when the user has been away from the assistant for over 2 hours.
 
         Every condition also accepts an optional "invert": true (default false). When set,
         that single condition's result is negated — e.g. wifi_ssid_is with invert:true

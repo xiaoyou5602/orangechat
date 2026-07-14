@@ -179,6 +179,7 @@ internal fun oneLineTriggerSummary(def: WorkflowDefinition): String = when (val 
     is TriggerSpec.GeofenceExit -> "离开 ${t.label ?: "某地点"}"
     is TriggerSpec.AppLaunched -> "${t.packageName} 启动"
     is TriggerSpec.AppClosed -> "${t.packageName} 关闭"
+    is TriggerSpec.AppForegroundDuration -> "${t.packageName} 持续前台 ${t.minutes} 分钟"
     is TriggerSpec.NotificationReceived -> "收到通知" + (t.packageName?.let { "($it)" } ?: "")
     is TriggerSpec.BootCompleted -> "设备开机"
     is TriggerSpec.ScreenOn -> "屏幕点亮"
