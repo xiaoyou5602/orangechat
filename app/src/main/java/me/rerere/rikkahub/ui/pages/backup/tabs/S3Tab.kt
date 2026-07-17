@@ -40,6 +40,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -195,6 +196,26 @@ fun S3Tab(
                             singleLine = true
                         )
                     },
+                )
+                item(
+                    headlineContent = { Text("Path-Style 访问") },
+                    supportingContent = {
+                        Text(
+                            if (s3Config.pathStyle) {
+                                "开启：使用 ${s3Config.endpoint.trimEnd('/')}/${s3Config.bucket} 格式（兼容 MinIO 等自建 S3）"
+                            } else {
+                                "关闭：使用 ${s3Config.bucket}.${s3Config.host} 虚拟主机格式（兼容 AWS 等标准 S3）"
+                            }
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = s3Config.pathStyle,
+                            onCheckedChange = { enabled ->
+                                updateS3Config(s3Config.copy(pathStyle = enabled))
+                            }
+                        )
+                    }
                 )
             }
 
