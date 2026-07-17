@@ -61,12 +61,6 @@ plugin/
 | 插件 | 说明 |
 |------|------|
 | 🌤️ Weather | 示例天气插件，调用 wttr.in API |
-| 🍜 What to Eat | 今天吃什么？随机推荐美食 |
-| 📖 共读 | 和 AI 一起阅读，含阅读器 UI（HTML+CSS+JS） |
-| 📱 Moments | 朋友圈，AI 社交动态（Supabase 后端） |
-| 💾 Supabase Memory | 云端长期记忆存储 |
-| 🛡️ Purify Backup | 数据净化备份，去除敏感信息 |
-| 📚 Plugin Guide | 插件开发文档工具（13个主题） |
 
 ### 📍 生活感知
 

@@ -66,6 +66,7 @@ import me.rerere.hugeicons.stroke.Package
 import me.rerere.hugeicons.stroke.Pulse01
 import me.rerere.hugeicons.stroke.ServerStack01
 import me.rerere.hugeicons.stroke.Settings03
+import me.rerere.hugeicons.stroke.Shield02
 import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.hugeicons.stroke.Share04
 import me.rerere.hugeicons.stroke.Sun01
@@ -205,43 +206,10 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text("插件管理") },
                     )
                     item(
-                        leadingContent = { Icon(HugeIcons.Alert01, null) },
-                        headlineContent = { Text("强制确认工具调用") },
-                        supportingContent = { Text("开启后，每次 AI 调用任何工具前都需要你手动确认") },
-                        trailingContent = {
-                            Switch(
-                                checked = settings.forceConfirmToolCalls && !settings.autoApproveAllTools,
-                                onCheckedChange = { enabled ->
-                                    vm.updateSettings(settings.copy(forceConfirmToolCalls = enabled, autoApproveAllTools = false))
-                                }
-                            )
-                        }
-                    )
-                    item(
-                        leadingContent = { Icon(HugeIcons.Alert01, null) },
-                        headlineContent = { Text("自动批准所有工具调用") },
-                        supportingContent = { Text("懒人模式：AI 调用任何工具时自动允许，不再弹窗确认（⚠️ 降低安全性）") },
-                        trailingContent = {
-                            Switch(
-                                checked = settings.autoApproveAllTools,
-                                onCheckedChange = { enabled ->
-                                    vm.updateSettings(settings.copy(autoApproveAllTools = enabled, forceConfirmToolCalls = !enabled))
-                                }
-                            )
-                        }
-                    )
-                    item(
-                        leadingContent = { Icon(HugeIcons.Alert01, null) },
-                        headlineContent = { Text("后台工作流拦截敏感工具") },
-                        supportingContent = { Text("开启后，由定时器/地理围栏等后台触发的工作流将禁止执行需要用户确认的工具（如短信、定位、截图等）") },
-                        trailingContent = {
-                            Switch(
-                                checked = settings.workflowHeadlessBlockSensitive && !settings.autoApproveAllTools,
-                                onCheckedChange = { enabled ->
-                                    vm.updateSettings(settings.copy(workflowHeadlessBlockSensitive = enabled, autoApproveAllTools = false))
-                                }
-                            )
-                        }
+                        onClick = { navController.navigate(Screen.SettingSecurity) },
+                        leadingContent = { Icon(HugeIcons.Shield02, null) },
+                        supportingContent = { Text("工具调用确认、自动批准、工作流拦截等安全选项") },
+                        headlineContent = { Text("安全设置") },
                     )
                     item(
                         onClick = { navController.navigate(Screen.Assistant) },
