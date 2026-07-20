@@ -20,6 +20,7 @@ import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
@@ -36,6 +38,7 @@ import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.StickyHeader
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
+import me.rerere.rikkahub.utils.UiState
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -52,6 +55,34 @@ fun ImportExportTab(
     val context = LocalContext.current
     var isExporting by remember { mutableStateOf(false) }
     var isRestoring by remember { mutableStateOf(false) }
+    val localRestoreState by vm.localRestoreState.collectAsStateWithLifecycle()
+    val isLocalRestoring = localRestoreState is UiState.Loading
+
+    LaunchedEffect(localRestoreState) {
+        when (val state = localRestoreState) {
+            is UiState.Success -> {
+                toaster.show(
+                    context.getString(R.string.backup_page_restore_success),
+                    type = ToastType.Success,
+                )
+                vm.clearLocalRestoreState()
+                onShowRestartDialog()
+            }
+
+            is UiState.Error -> {
+                toaster.show(
+                    context.getString(
+                        R.string.backup_page_restore_failed,
+                        state.error.message ?: "",
+                    ),
+                    type = ToastType.Error,
+                )
+                vm.clearLocalRestoreState()
+            }
+
+            else -> Unit
+        }
+    }
 
     // 导入类型：local 为本地备份，chatbox 为 Chatbox 导入，cherry 为 Cherry Studio 导入
     var importType by remember { mutableStateOf("local") }
@@ -98,28 +129,13 @@ fun ImportExportTab(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let { sourceUri ->
-            scope.launch {
+            if (importType == "local") {
+                vm.restoreFromLocalUri(context.applicationContext, sourceUri)
+            } else {
+                scope.launch {
                 isRestoring = true
                 runCatching {
                     when (importType) {
-                        "local" -> {
-                            // 本地备份导入：处理zip文件
-                            val tempFile =
-                                File(context.cacheDir, "temp_restore_${System.currentTimeMillis()}.zip")
-
-                            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                                FileOutputStream(tempFile).use { outputStream ->
-                                    inputStream.copyTo(outputStream)
-                                }
-                            }
-
-                            // 从临时文件恢复
-                            vm.restoreFromLocalFile(tempFile)
-
-                            // 清理临时文件
-                            tempFile.delete()
-                        }
-
                         "chatbox" -> {
                             // Chatbox导入：处理json文件
                             val tempFile =
@@ -170,6 +186,7 @@ fun ImportExportTab(
                     )
                 }
                 isRestoring = false
+                }
             }
         }
     }
@@ -215,7 +232,7 @@ fun ImportExportTab(
                 )
 
                 item(
-                    onClick = if (!isRestoring) {
+                    onClick = if (!isRestoring && !isLocalRestoring) {
                         {
                             importType = "local"
                             openDocumentLauncher.launch(arrayOf("application/zip"))
@@ -224,7 +241,7 @@ fun ImportExportTab(
                     headlineContent = { Text(stringResource(R.string.backup_page_local_backup_import)) },
                     supportingContent = {
                         Text(
-                            if (isRestoring) {
+                            if (isLocalRestoring) {
                                 stringResource(R.string.backup_page_importing)
                             } else {
                                 stringResource(R.string.backup_page_import_desc)
@@ -232,7 +249,7 @@ fun ImportExportTab(
                         )
                     },
                     leadingContent = {
-                        if (isRestoring) {
+                        if (isLocalRestoring) {
                             CircularWavyProgressIndicator(modifier = Modifier.size(24.dp))
                         } else {
                             Icon(HugeIcons.FileImport, null)

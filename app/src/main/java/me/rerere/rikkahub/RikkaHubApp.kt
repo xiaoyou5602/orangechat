@@ -40,6 +40,7 @@ import me.rerere.rikkahub.data.service.DeviceEventAiTriggerService
 import me.rerere.rikkahub.data.service.DeviceEventTrackingService
 import me.rerere.rikkahub.data.service.ProactiveMessageService
 import me.rerere.rikkahub.data.service.SupabaseSyncService
+import me.rerere.rikkahub.data.sync.PendingDatabaseRestore
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.WebServerService
 import me.rerere.rikkahub.utils.CrashHandler
@@ -70,6 +71,13 @@ class RikkaHubApp : Application() {
     override fun onCreate() {
         super.onCreate()
         INSTANCE = this
+        runCatching {
+            if (PendingDatabaseRestore.applyIfReady(this)) {
+                Log.i(TAG, "Applied pending database restore before Room initialization")
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to apply pending database restore; keeping the previous database", error)
+        }
         startKoin {
             androidLogger()
             androidContext(this@RikkaHubApp)
@@ -108,32 +116,37 @@ class RikkaHubApp : Application() {
         // sync upload files to DB
         syncManagedFiles()
 
-        // Start WebServer if enabled in settings
-        startWebServerIfEnabled()
+        if (BuildConfig.DEBUG) {
+            // 专用测试包不得在导入生产备份后启动第二套后台自动化。
+            Log.w(TAG, "Debug test build: background automations are disabled")
+        } else {
+            // Start WebServer if enabled in settings
+            startWebServerIfEnabled()
 
-        // Reschedule proactive message alarm if enabled
-        rescheduleProactiveMessageIfEnabled()
+            // Reschedule proactive message alarm if enabled
+            rescheduleProactiveMessageIfEnabled()
 
-        // Reschedule Supabase sync alarm if enabled
-        rescheduleSupabaseSyncIfEnabled()
+            // Reschedule Supabase sync alarm if enabled
+            rescheduleSupabaseSyncIfEnabled()
 
-        // Start device event tracking (screen on/off realtime listener) if enabled
-        startDeviceEventTrackingIfEnabled()
+            // Start device event tracking (screen on/off realtime listener) if enabled
+            startDeviceEventTrackingIfEnabled()
 
-        // Start workflow trigger registry (event-driven automation)
-        startWorkflowTriggers()
+            // Start workflow trigger registry (event-driven automation)
+            startWorkflowTriggers()
+
+            // Start App Lock guard (intercepts locked apps when opened) if any app is locked
+            startAppLockGuardIfEnabled()
+
+            // Start aggressive mode (device event AI trigger) if enabled
+            startAggressiveModeIfEnabled()
+
+            // Reschedule daily_cron alarm if plugins need it
+            rescheduleDailyCronIfEnabled()
+        }
 
         // Start network change monitor (invalidates SSH DNS cache on WiFi<->cell handoff)
         startNetworkChangeMonitor()
-
-        // Start App Lock guard (intercepts locked apps when opened) if any app is locked
-        startAppLockGuardIfEnabled()
-
-        // Start aggressive mode (device event AI trigger) if enabled
-        startAggressiveModeIfEnabled()
-
-        // Reschedule daily_cron alarm if plugins need it
-        rescheduleDailyCronIfEnabled()
 
         // Diary summary is now generated entirely by Supabase Edge Function.
         // App no longer schedules local diary summary alarms.

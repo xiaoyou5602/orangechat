@@ -6,13 +6,17 @@
 
 package me.rerere.rikkahub.ui.pages.backup
 
+import android.content.Context
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -24,6 +28,7 @@ import me.rerere.rikkahub.data.sync.S3BackupItem
 import me.rerere.rikkahub.data.sync.S3Sync
 import me.rerere.rikkahub.utils.UiState
 import java.io.File
+import java.io.FileOutputStream
 
 private const val TAG = "BackupVM"
 
@@ -41,6 +46,7 @@ class BackupVM(
 
     val webDavBackupItems = MutableStateFlow<UiState<List<WebDavBackupItem>>>(UiState.Idle)
     val s3BackupItems = MutableStateFlow<UiState<List<S3BackupItem>>>(UiState.Idle)
+    val localRestoreState = MutableStateFlow<UiState<Unit>>(UiState.Idle)
 
     init {
         loadBackupFileItems()
@@ -93,8 +99,30 @@ class BackupVM(
         return file
     }
 
-    suspend fun restoreFromLocalFile(file: File) {
-        webDavSync.restoreFromLocalFile(file, settings.value.webDavConfig)
+    fun restoreFromLocalUri(context: Context, uri: Uri) {
+        if (localRestoreState.value is UiState.Loading) return
+        viewModelScope.launch {
+            localRestoreState.emit(UiState.Loading)
+            val tempFile = File(context.cacheDir, "temp_restore_${System.currentTimeMillis()}.zip")
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                        FileOutputStream(tempFile).use { outputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
+                    } ?: error("Unable to open backup file")
+                }
+                webDavSync.restoreFromLocalFile(tempFile, settings.value.webDavConfig)
+            }.fold(
+                onSuccess = { localRestoreState.emit(UiState.Success(Unit)) },
+                onFailure = { localRestoreState.emit(UiState.Error(it)) },
+            )
+            withContext(Dispatchers.IO) { tempFile.delete() }
+        }
+    }
+
+    fun clearLocalRestoreState() {
+        localRestoreState.value = UiState.Idle
     }
 
     suspend fun restoreFromChatBox(file: File): ChatboxRestoreResult {

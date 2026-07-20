@@ -18,6 +18,8 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.migration.SettingsJsonMigrator
+import me.rerere.rikkahub.data.db.AppDatabase
+import me.rerere.rikkahub.data.sync.PendingDatabaseRestore
 import me.rerere.rikkahub.plugin.repository.PluginRepository
 import me.rerere.rikkahub.plugin.repository.PluginSettingsExport
 import me.rerere.rikkahub.plugin.scanner.PluginScanner
@@ -40,6 +42,7 @@ class WebDavSync(
     private val context: Context,
     private val httpClient: HttpClient,
     private val pluginRepository: PluginRepository,
+    private val database: AppDatabase,
 ) {
     private fun getClient(config: WebDavConfig): WebDavClient {
         return WebDavClient(config, httpClient)
@@ -133,7 +136,11 @@ class WebDavSync(
         }
 
         try {
-            restoreFromBackupFile(file, config, includePlugins = true)
+            restoreFromBackupFile(
+                backupFile = file,
+                config = config.copy(items = WebDavConfig.BackupItem.entries),
+                includePlugins = true,
+            )
             Log.i(TAG, "restoreFromLocalFile: Restore completed successfully")
         } catch (e: Exception) {
             Log.e(TAG, "restoreFromLocalFile: Failed to restore from local file", e)
@@ -162,6 +169,9 @@ class WebDavSync(
 
             // Backup database files
             if (config.items.contains(WebDavConfig.BackupItem.DATABASE)) {
+                database.openHelper.writableDatabase
+                    .query("PRAGMA wal_checkpoint(FULL)")
+                    .use { it.moveToFirst() }
                 val dbFile = context.getDatabasePath("rikka_hub")
                 if (dbFile.exists()) {
                     addFileToZip(zipOut, dbFile, "rikka_hub.db")
@@ -249,10 +259,19 @@ class WebDavSync(
     ) = withContext(Dispatchers.IO) {
         Log.i(TAG, "restoreFromBackupFile: Starting restore from ${backupFile.absolutePath}")
 
-        ZipInputStream(FileInputStream(backupFile)).use { zipIn ->
-            var entry: ZipEntry?
-            while (zipIn.nextEntry.also { entry = it } != null) {
-                entry?.let { zipEntry ->
+        val restoreDatabase = config.items.contains(WebDavConfig.BackupItem.DATABASE)
+        val databaseStagingDir = if (restoreDatabase) {
+            PendingDatabaseRestore.createStagingDir(context)
+        } else {
+            null
+        }
+        var stagedDatabase = false
+
+        try {
+            ZipInputStream(FileInputStream(backupFile)).use { zipIn ->
+                var entry: ZipEntry?
+                while (zipIn.nextEntry.also { entry = it } != null) {
+                    entry?.let { zipEntry ->
                     Log.i(TAG, "restoreFromBackupFile: Processing entry ${zipEntry.name}")
 
                     when (zipEntry.name) {
@@ -271,35 +290,17 @@ class WebDavSync(
                         }
 
                         "rikka_hub.db", "rikka_hub-wal", "rikka_hub-shm" -> {
-                            if (config.items.contains(WebDavConfig.BackupItem.DATABASE)) {
-                                val dbFile = when (zipEntry.name) {
-                                    "rikka_hub.db" -> context.getDatabasePath("rikka_hub")
-                                    "rikka_hub-wal" -> File(
-                                        context.getDatabasePath("rikka_hub").parentFile,
-                                        "rikka_hub-wal"
-                                    )
-
-                                    "rikka_hub-shm" -> File(
-                                        context.getDatabasePath("rikka_hub").parentFile,
-                                        "rikka_hub-shm"
-                                    )
-
-                                    else -> null
-                                }
-
-                                dbFile?.let { targetFile ->
+                            if (restoreDatabase && databaseStagingDir != null) {
+                                val targetFile = File(databaseStagingDir, zipEntry.name)
+                                targetFile.let {
                                     Log.i(
                                         TAG,
-                                        "restoreFromBackupFile: Restoring ${zipEntry.name} to ${targetFile.absolutePath}"
+                                        "restoreFromBackupFile: Staging ${zipEntry.name} for next cold start"
                                     )
-                                    targetFile.parentFile?.mkdirs()
                                     FileOutputStream(targetFile).use { outputStream ->
                                         zipIn.copyTo(outputStream)
                                     }
-                                    Log.i(
-                                        TAG,
-                                        "restoreFromBackupFile: Restored ${zipEntry.name} (${targetFile.length()} bytes)"
-                                    )
+                                    if (zipEntry.name == "rikka_hub.db") stagedDatabase = true
                                 }
                             }
                         }
@@ -359,9 +360,15 @@ class WebDavSync(
                         }
                     }
 
-                    zipIn.closeEntry()
+                        zipIn.closeEntry()
+                    }
                 }
             }
+            if (stagedDatabase && databaseStagingDir != null) {
+                PendingDatabaseRestore.commit(context, databaseStagingDir)
+            }
+        } finally {
+            databaseStagingDir?.deleteRecursively()
         }
 
         Log.i(TAG, "restoreFromBackupFile: Restore completed successfully")
