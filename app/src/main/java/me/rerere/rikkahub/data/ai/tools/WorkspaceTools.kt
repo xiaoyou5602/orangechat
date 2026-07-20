@@ -27,6 +27,11 @@ import java.io.ByteArrayOutputStream
  
 private const val SHELL_TIMEOUT_MAX_SECONDS = 600L
 private const val MAX_READ_FILE_BYTES = 8L * 1024 * 1024
+private const val DEFAULT_READ_MAX_LINES = 200
+private const val MAX_READ_MAX_LINES = 400
+private const val MAX_READ_RESULT_BYTES = 24 * 1024
+private const val MIN_BASE64_FRAGMENT_LENGTH = 64
+private const val MIN_BASE64_RUN_BYTES = 512
  
 val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_read_file" to false,
@@ -72,11 +77,21 @@ private fun createReadFileTool(
         Read a file using the assistant's bound workspace Rootfs. Paths must be absolute inside Rootfs.
         Use /workspace for the workspace files area.
         Supports UTF-8 text files and image files (png, jpg, jpeg, gif, webp, bmp).
+        Text is returned in pages: by default 200 lines and at most 24 KiB. Use start_line and max_lines to read another page.
+        Large encoded payloads are withheld; use the reported next_start_line to continue after them.
     """.trimIndent().replace("\n", " "),
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
                 putPathProperty(required = true)
+                put("start_line", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "1-based first line to read. Defaults to 1.")
+                })
+                put("max_lines", buildJsonObject {
+                    put("type", "integer")
+                    put("description", "Maximum lines to return. Defaults to $DEFAULT_READ_MAX_LINES, max $MAX_READ_MAX_LINES.")
+                })
             },
             required = listOf("path"),
         )
@@ -88,11 +103,26 @@ private fun createReadFileTool(
             workspaceRepository.readImageInRootfs(workspaceId, path)
         } else {
             val text = workspaceRepository.readTextInRootfs(workspaceId, path)
+            val startLine = it.jsonObject.positiveInt("start_line") ?: 1
+            val maxLines = (it.jsonObject.positiveInt("max_lines") ?: DEFAULT_READ_MAX_LINES)
+                .coerceAtMost(MAX_READ_MAX_LINES)
+            val page = text.toSafeReadPage(startLine, maxLines)
             listOf(
                 UIMessagePart.Text(
                     buildJsonObject {
                         put("path", path)
-                        put("text", text)
+                        put("start_line", page.startLine)
+                        put("end_line", page.endLine)
+                        put("total_lines", page.totalLines)
+                        put("text", page.text)
+                        if (page.truncated) put("truncated", true)
+                        page.nextStartLine?.let { put("next_start_line", it) }
+                        page.withheldEncodedPayload?.let { range ->
+                            put("withheld_encoded_payload", true)
+                            put("withheld_start_line", range.first)
+                            put("withheld_end_line", range.last)
+                            put("guidance", "A large encoded payload was withheld to keep the chat context small. Continue with start_line=${range.last + 1}, or run the program instead of reading its engine data.")
+                        }
                     }.toString()
                 )
             )
@@ -277,6 +307,102 @@ private fun createShellTool(
  
 private fun kotlinx.serialization.json.JsonObject.string(name: String): String? =
     this[name]?.jsonPrimitive?.contentOrNull
+
+private fun kotlinx.serialization.json.JsonObject.positiveInt(name: String): Int? {
+    val value = string(name) ?: return null
+    return value.toIntOrNull()?.also { require(it > 0) { "$name must be a positive integer" } }
+}
+
+internal data class WorkspaceReadPage(
+    val startLine: Int,
+    val endLine: Int,
+    val totalLines: Int,
+    val text: String,
+    val truncated: Boolean,
+    val nextStartLine: Int?,
+    val withheldEncodedPayload: IntRange?,
+)
+
+internal fun String.toSafeReadPage(startLine: Int, maxLines: Int): WorkspaceReadPage {
+    val lines = lines()
+    val totalLines = lines.size
+    if (startLine > totalLines) {
+        return WorkspaceReadPage(startLine, startLine - 1, totalLines, "", false, null, null)
+    }
+
+    val encodedRanges = lines.encodedPayloadRanges()
+    val firstIndex = startLine - 1
+    val requestedLastIndex = minOf(firstIndex + maxLines - 1, totalLines - 1)
+    val blockedRange = encodedRanges.firstOrNull { it.first - 1 <= requestedLastIndex && it.last - 1 >= firstIndex }
+    val contentLastIndex = when {
+        blockedRange == null -> requestedLastIndex
+        blockedRange.first - 1 > firstIndex -> blockedRange.first - 2
+        else -> firstIndex - 1
+    }
+
+    val selected = mutableListOf<String>()
+    var resultBytes = 0
+    var byteLimited = false
+    for (index in firstIndex..contentLastIndex) {
+        val line = lines[index]
+        val lineBytes = line.toByteArray(Charsets.UTF_8).size + if (selected.isEmpty()) 0 else 1
+        if (resultBytes + lineBytes > MAX_READ_RESULT_BYTES) {
+            byteLimited = true
+            break
+        }
+        selected += line
+        resultBytes += lineBytes
+    }
+
+    val returnedLastIndex = firstIndex + selected.size - 1
+    val withheldRange = if (byteLimited) null else blockedRange
+    val nextStartLine = when {
+        byteLimited -> returnedLastIndex + 2
+        blockedRange != null -> blockedRange.last + 1
+        returnedLastIndex < totalLines - 1 -> returnedLastIndex + 2
+        else -> null
+    }
+    return WorkspaceReadPage(
+        startLine = startLine,
+        endLine = if (selected.isEmpty()) startLine - 1 else returnedLastIndex + 1,
+        totalLines = totalLines,
+        text = selected.joinToString("\n"),
+        truncated = nextStartLine != null,
+        nextStartLine = nextStartLine,
+        withheldEncodedPayload = withheldRange,
+    )
+}
+
+private fun List<String>.encodedPayloadRanges(): List<IntRange> {
+    val ranges = mutableListOf<IntRange>()
+    var index = 0
+    while (index < size) {
+        if (!this[index].isBase64Fragment()) {
+            index += 1
+            continue
+        }
+        val start = index
+        var bytes = 0
+        while (index < size && this[index].isBase64Fragment()) {
+            bytes += this[index].base64FragmentLength()
+            index += 1
+        }
+        val length = index - start
+        if (bytes >= MIN_BASE64_RUN_BYTES || (length == 1 && bytes >= MAX_READ_RESULT_BYTES)) {
+            ranges += (start + 1)..index
+        }
+    }
+    return ranges
+}
+
+private fun String.isBase64Fragment(): Boolean = base64FragmentLength() >= MIN_BASE64_FRAGMENT_LENGTH
+
+private fun String.base64FragmentLength(): Int {
+    val payload = trim().trim('"', '\'', ',', '(', ')').trim()
+    if (payload.length < MIN_BASE64_FRAGMENT_LENGTH) return 0
+    if (!payload.all { it.isLetterOrDigit() || it == '+' || it == '/' || it == '=' }) return 0
+    return payload.length
+}
  
 private suspend fun WorkspaceRepository.readTextInRootfs(
     workspaceId: String,
