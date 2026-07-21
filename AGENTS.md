@@ -2,6 +2,27 @@
 
 本文档面向贡献者，概述本仓库的模块结构、开发流程与提交规范，便于快速上手并保持一致的协作质量。
 
+## Fork-specific workflow
+
+- 本仓库是 OrangeChat 宿主源码工作副本。开始修改长期 fork 行为前，先完整阅读
+  `docs/FORK_MAINTENANCE.md`，再按需要查看 `docs/PATCHES.md`。
+- 当前个人远程 fork 尚未配置，`origin` 仍指向官方供体
+  `sue1231513/orangechat`。不得向该 remote 推送，也不得把本地 commit、APK 或
+  测试结果表述为已发布版本。
+- Rism 的功能目标、跨仓库计划、Supabase、QuickJS 插件和 VPS worker 由
+  `orangecat-personal-addons` 维护；当前本地入口为
+  `C:\Users\youzi\orangechat-rism\README.md`。本仓库只记录宿主实现与维护方法，
+  不复制整份 Rism 功能计划。
+- 修改 Room schema 必须提供并测试旧版本迁移。恢复旧备份时，数据库替换必须在
+  Room 初始化前完成，不得覆盖运行中已打开的数据库；保留可回滚副本并考虑 WAL。
+- debug 测试变体必须与正式橘瓣使用不同的 application ID 和桌面名称。导入生产
+  备份的测试包不得自动启动第二套主动消息、同步、日程或其他后台自动化。
+- 任何安装、卸载、发布、remote 调整或推送都需要当前任务明确授权；不得卸载
+  toge 正在使用的正式橘瓣。
+- 完成一个宿主补丁后，同步 `docs/PATCHES.md`；若它属于跨仓库 Rism 功能，同时
+  回写 `orangechat-rism` 的主计划和 `docs/iteration-log.md`，并分别创建范围明确的
+  本地 commit。
+
 ## Build, Test, and Development Commands
 
 使用 Android Studio 或命令行 Gradle：
@@ -31,6 +52,10 @@
 
 - 单元测试：`FooTest.kt`
 - 仪器测试：`FooInstrumentedTest.kt` 或 `*Test.kt`
+
+新增迁移、备份恢复、工作区工具或后台隔离逻辑时，优先运行针对性单元测试，再运行
+完整 `assembleDebug`。没有真机验证时必须明确写“仅构建/单元测试通过”，不能写成
+可替换正式版本。
 
 ## Module Structure
 

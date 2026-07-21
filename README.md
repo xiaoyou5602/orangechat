@@ -1,3 +1,11 @@
+> [!IMPORTANT]
+> 此工作副本用于建立 toge 长期维护的 OrangeChat 宿主 fork，承载 Rism 所需的
+> Kotlin、Room、备份兼容与工作区安全改动。当前个人远程 fork 尚未配置，`origin`
+> 仍指向官方供体；本地 commit 不等于已经发布。维护方式见
+> [`docs/FORK_MAINTENANCE.md`](docs/FORK_MAINTENANCE.md)，长期差异见
+> [`docs/PATCHES.md`](docs/PATCHES.md)。Rism 插件、Supabase、VPS worker 与跨仓库
+> 功能计划位于 `orangecat-personal-addons`，不在本仓库重复维护。
+
 <div align="center">
 
 <img src="docs/icon.png" alt="橘瓣" width="120" />
