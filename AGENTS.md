@@ -4,11 +4,11 @@
 
 ## Fork-specific workflow
 
-- 本仓库是 OrangeChat 宿主源码工作副本。开始修改长期 fork 行为前，先完整阅读
+- 本仓库是 OrangeChat 宿主 fork。开始修改长期 fork 行为前，先完整阅读
   `docs/FORK_MAINTENANCE.md`，再按需要查看 `docs/PATCHES.md`。
-- 当前个人远程 fork 尚未配置，`origin` 仍指向官方供体
-  `sue1231513/orangechat`。不得向该 remote 推送，也不得把本地 commit、APK 或
-  测试结果表述为已发布版本。
+- `origin` 指向个人 fork `xiaoyou5602/orangechat`，`upstream` 指向官方供体
+  `sue1231513/orangechat`。不得向 `upstream` 推送，也不得把本地 commit、源码推送、
+  APK 或测试结果表述为已发布版本。
 - Rism 的功能目标、跨仓库计划、Supabase、QuickJS 插件和 VPS worker 由
   `orangecat-personal-addons` 维护；当前本地入口为
   `C:\Users\youzi\orangechat-rism\README.md`。本仓库只记录宿主实现与维护方法，

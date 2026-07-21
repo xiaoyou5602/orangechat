@@ -8,10 +8,11 @@
 
 - 官方基线：OrangeChat `v2.2.3`，commit
   `d1aad52f4e3aae0857b8f05ef46769a6de53c7d0`；
-- 当前本地分支：`codex/workspace-guardrails`；
+- 当前稳定分支：`main`；
 - 已完成本地补丁：工作区读取护栏、旧备份冷启动恢复、debug 后台隔离；
-- 个人 GitHub fork 尚未建立，`origin` 仍指向官方供体；
-- 当前改动只在本地 commit 中保存，尚未推送或发布；
+- 个人 GitHub fork：`xiaoyou5602/orangechat`；
+- `origin` 指向个人 fork，`upstream` 指向官方供体；
+- 三笔宿主补丁与维护文档已整理到 `main`；源码推送不等于 APK 发布；
 - 单元测试与完整 debug 构建通过，旧备份恢复仍待真机复验。
 
 ## 仓库边界
@@ -33,28 +34,27 @@
 跨仓库功能在 `orangecat-personal-addons/docs/plans/` 保留一份主计划，本仓库仅在
 [`PATCHES.md`](PATCHES.md)记录宿主实现、测试和对应 commit。
 
-## 目标 remote 结构
+## Remote 结构
 
-建立个人 GitHub fork 后，目标关系是：
+当前关系是：
 
 ```text
-origin    → toge 的 OrangeChat fork
-upstream  → sue1231513/orangechat
+origin    → git@github.com:xiaoyou5602/orangechat.git
+upstream  → https://github.com/sue1231513/orangechat.git
 ```
 
-在 remote 尚未调整前：
-
-- 不运行 `git push`；
-- 不把 `origin` 当作个人仓库；
+- 只向 `origin` 推送我们维护的分支；
+- 不向 `upstream` 推送；
 - 不自动合并官方 HEAD；
 - 官方变化先审阅，再决定 merge、rebase 或 cherry-pick；
 - 不允许官方更新覆盖 [`PATCHES.md`](PATCHES.md) 中仍需保留的行为。
 
-remote 调整与首次推送属于外部状态变更，必须由 toge 明确授权后执行。
+后续推送、发布或调整 remote 仍需当前任务明确授权。
 
 ## 分支与提交
 
-- 稳定 fork 建立前继续使用范围明确的 `codex/*` 功能分支；
+- `main` 保存已经验证并准备长期维护的宿主状态；新功能按需要使用范围明确的
+  `codex/*` 分支；
 - 一个 commit 只完成一个可验证的宿主变化；
 - 不把 APK、构建目录、聊天记录、备份或凭据纳入 commit；
 - 功能通过测试后更新 `PATCHES.md`；跨仓库功能同时更新 Rism 主计划与迭代日志；
