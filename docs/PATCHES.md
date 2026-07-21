@@ -1,5 +1,7 @@
 # 宿主长期补丁清单
 
+> 2026-07-22 maintenance: build and debug-install helpers now resolve Java/ADB from the current environment instead of old machine-specific paths. `install_qq_debug.bat` only uses `adb install -r`, so it preserves local debug-app data. Removed tracked one-off compiler logs, truncated command-output files, and obsolete path-specific helper scripts. Validation: static script checks and Python syntax parsing; no APK build, device installation, or release action was run.
+
 本文记录我们相对 OrangeChat 官方供体需要长期保留的行为差异。它不是聊天记录，
 也不复制 Git 日志；每项只说明为什么保留、当前实现、验证状态和对应 commit。
 

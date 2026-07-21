@@ -1,10 +1,11 @@
 import re
-import os
+from pathlib import Path
 
-src = r'd:/a13/orangechat/app/src/main/res/values-zh/strings.xml'
+ROOT = Path(__file__).resolve().parent
+src = ROOT / 'app/src/main/res/values-zh/strings.xml'
 targets = [
-    r'd:/a13/orangechat/app/src/main/res/values/strings.xml',
-    r'd:/a13/orangechat/app/src/main/res/values-zh-rTW/strings.xml',
+    ROOT / 'app/src/main/res/values/strings.xml',
+    ROOT / 'app/src/main/res/values-zh-rTW/strings.xml',
 ]
 
 with open(src, 'r', encoding='utf-8') as f:
@@ -17,7 +18,7 @@ if not m:
 block = m.group(1)
 
 for t in targets:
-    if not os.path.exists(t):
+    if not t.exists():
         print(f'skip missing {t}')
         continue
     with open(t, 'r', encoding='utf-8') as f:
