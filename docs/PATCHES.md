@@ -20,12 +20,14 @@
 ### 旧备份冷启动恢复与 debug 后台隔离
 
 - 目的：兼容 2.2.2 的 Room v28 备份，避免恢复到 v29 后缺少
-  `security_audit_logs`；避免测试包导入生产设置后启动第二套后台自动化。
+  `security_audit_logs`；避免测试包导入生产设置后启动第二套后台自动化或因公共插件
+  目录无权限而中止聊天数据库恢复。
 - 行为：数据库先暂存，在 Room 初始化前替换并执行 28→29 migration；恢复任务由
-  ViewModel 持有，导出前执行 WAL checkpoint；debug 变体默认关闭后台自动启动项。
-- 验证：2 项数据库替换测试、工作区 4 项测试和完整 debug 构建通过；仍待真机验证
-  设置、聊天、文件、skills、插件和插件设置恢复。
-- commit：`544b32c7 fix: restore older backups before Room starts`。
+  ViewModel 持有，导出前执行 WAL checkpoint；debug 变体默认关闭后台自动启动项，
+  并将插件恢复到自身应用私有目录，不再读写正式版公共插件目录或要求所有文件访问权限。
+- 验证：2 项数据库替换测试、2 项插件目录策略测试、工作区 4 项测试和完整 debug
+  构建通过；仍待真机验证设置、聊天、文件、skills、插件和插件设置恢复。
+- commit：`544b32c7 fix: restore older backups before Room starts`；debug 插件目录修复见本次后续 commit。
 
 ## 待实现
 
