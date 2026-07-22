@@ -30,7 +30,9 @@
 - 验证：2 项数据库替换测试、2 项插件目录策略测试、3 项工作区备份路径测试、工作区
   读取护栏 4 项测试和完整 debug 构建通过；仍待真机验证设置、聊天、上传文件、skills、
   插件、插件设置和 SAF 工作区迁移。
-- commit：`544b32c7 fix: restore older backups before Room starts`；debug 插件目录修复见本次后续 commit。
+- commits：`544b32c7 fix: restore older backups before Room starts`、
+  `29601167 fix: isolate debug plugin restore storage`、
+  `8ff04cf7 fix: preserve workspaces across backup restore`。
 
 ## 待实现
 
