@@ -56,7 +56,9 @@ fun ImportExportTab(
     var isExporting by remember { mutableStateOf(false) }
     var isRestoring by remember { mutableStateOf(false) }
     val localRestoreState by vm.localRestoreState.collectAsStateWithLifecycle()
+    val workspaceImportState by vm.workspaceImportState.collectAsStateWithLifecycle()
     val isLocalRestoring = localRestoreState is UiState.Loading
+    val isWorkspaceImporting = workspaceImportState is UiState.Loading
 
     LaunchedEffect(localRestoreState) {
         when (val state = localRestoreState) {
@@ -78,6 +80,28 @@ fun ImportExportTab(
                     type = ToastType.Error,
                 )
                 vm.clearLocalRestoreState()
+            }
+
+            else -> Unit
+        }
+    }
+
+    LaunchedEffect(workspaceImportState) {
+        when (val state = workspaceImportState) {
+            is UiState.Success -> {
+                toaster.show(
+                    "工作区已导入 ${state.data.importedFiles} 个文件",
+                    type = ToastType.Success,
+                )
+                vm.clearWorkspaceImportState()
+            }
+
+            is UiState.Error -> {
+                toaster.show(
+                    "工作区导入失败：${state.error.message.orEmpty()}",
+                    type = ToastType.Error,
+                )
+                vm.clearWorkspaceImportState()
             }
 
             else -> Unit
@@ -191,6 +215,12 @@ fun ImportExportTab(
         }
     }
 
+    val openWorkspaceTreeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri?.let { vm.importWorkspaceFromTree(context.applicationContext, it) }
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -250,6 +280,29 @@ fun ImportExportTab(
                     },
                     leadingContent = {
                         if (isLocalRestoring) {
+                            CircularWavyProgressIndicator(modifier = Modifier.size(24.dp))
+                        } else {
+                            Icon(HugeIcons.FileImport, null)
+                        }
+                    },
+                )
+
+                item(
+                    onClick = if (!isWorkspaceImporting) {
+                        { openWorkspaceTreeLauncher.launch(null) }
+                    } else null,
+                    headlineContent = { Text("从另一橘瓣导入工作区") },
+                    supportingContent = {
+                        Text(
+                            if (isWorkspaceImporting) {
+                                "正在复制工作区文件…"
+                            } else {
+                                "在系统文件选择器中打开正式橘瓣，并选择一个工作区根目录；多个工作区请分别导入"
+                            }
+                        )
+                    },
+                    leadingContent = {
+                        if (isWorkspaceImporting) {
                             CircularWavyProgressIndicator(modifier = Modifier.size(24.dp))
                         } else {
                             Icon(HugeIcons.FileImport, null)

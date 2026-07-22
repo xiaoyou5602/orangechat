@@ -26,6 +26,8 @@ import me.rerere.rikkahub.data.sync.webdav.WebDavBackupItem
 import me.rerere.rikkahub.data.sync.webdav.WebDavSync
 import me.rerere.rikkahub.data.sync.S3BackupItem
 import me.rerere.rikkahub.data.sync.S3Sync
+import me.rerere.rikkahub.data.sync.WorkspaceImportResult
+import me.rerere.rikkahub.data.sync.WorkspaceTreeImporter
 import me.rerere.rikkahub.utils.UiState
 import java.io.File
 import java.io.FileOutputStream
@@ -47,6 +49,7 @@ class BackupVM(
     val webDavBackupItems = MutableStateFlow<UiState<List<WebDavBackupItem>>>(UiState.Idle)
     val s3BackupItems = MutableStateFlow<UiState<List<S3BackupItem>>>(UiState.Idle)
     val localRestoreState = MutableStateFlow<UiState<Unit>>(UiState.Idle)
+    val workspaceImportState = MutableStateFlow<UiState<WorkspaceImportResult>>(UiState.Idle)
 
     init {
         loadBackupFileItems()
@@ -123,6 +126,23 @@ class BackupVM(
 
     fun clearLocalRestoreState() {
         localRestoreState.value = UiState.Idle
+    }
+
+    fun importWorkspaceFromTree(context: Context, uri: Uri) {
+        if (workspaceImportState.value is UiState.Loading) return
+        viewModelScope.launch {
+            workspaceImportState.emit(UiState.Loading)
+            runCatching {
+                WorkspaceTreeImporter.import(context.applicationContext, uri)
+            }.fold(
+                onSuccess = { workspaceImportState.emit(UiState.Success(it)) },
+                onFailure = { workspaceImportState.emit(UiState.Error(it)) },
+            )
+        }
+    }
+
+    fun clearWorkspaceImportState() {
+        workspaceImportState.value = UiState.Idle
     }
 
     suspend fun restoreFromChatBox(file: File): ChatboxRestoreResult {

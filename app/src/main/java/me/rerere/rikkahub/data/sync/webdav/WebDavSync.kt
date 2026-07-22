@@ -20,6 +20,7 @@ import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.migration.SettingsJsonMigrator
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.sync.PendingDatabaseRestore
+import me.rerere.rikkahub.data.sync.WorkspaceBackupPaths
 import me.rerere.rikkahub.plugin.repository.PluginRepository
 import me.rerere.rikkahub.plugin.repository.PluginSettingsExport
 import me.rerere.rikkahub.plugin.scanner.PluginScanner
@@ -215,6 +216,20 @@ class WebDavSync(
                     Log.w(TAG, "prepareBackupFile: Skills folder does not exist or is not a directory")
                 }
 
+                val workspacesRoot = File(context.filesDir, WorkspaceBackupPaths.WORKSPACES_DIR)
+                WorkspaceBackupPaths.userFilesDirectories(workspacesRoot).forEach { filesDir ->
+                    Log.i(
+                        TAG,
+                        "prepareBackupFile: Backing up workspace files from ${filesDir.absolutePath}",
+                    )
+                    addDirectoryToZip(
+                        zipOut = zipOut,
+                        rootDir = workspacesRoot,
+                        currentDir = filesDir,
+                        entryPrefix = WorkspaceBackupPaths.ENTRY_PREFIX,
+                    )
+                }
+
                 // Backup plugin settings and plugin folders (only for local backup/export)
                 if (includePlugins) {
                     try {
@@ -340,6 +355,10 @@ class WebDavSync(
                                 zipEntry.name.startsWith("${FileFolders.SKILLS}/")
                             ) {
                                 restoreSkillEntry(zipIn, zipEntry.name)
+                            } else if (config.items.contains(WebDavConfig.BackupItem.FILES) &&
+                                zipEntry.name.startsWith(WorkspaceBackupPaths.ENTRY_PREFIX)
+                            ) {
+                                restoreWorkspaceEntry(zipIn, zipEntry.name)
                             } else if (includePlugins && zipEntry.name == "plugin_settings.json") {
                                 try {
                                     val pluginSettingsJson = zipIn.readBytes().toString(Charsets.UTF_8)
@@ -454,6 +473,26 @@ class WebDavSync(
         } catch (e: Exception) {
             Log.e(TAG, "restoreFromBackupFile: Failed to restore skill file $entryName", e)
             throw Exception("Failed to restore skill file $entryName: ${e.message}")
+        }
+    }
+
+    private fun restoreWorkspaceEntry(zipIn: ZipInputStream, entryName: String) {
+        val workspacesRoot = File(context.filesDir, WorkspaceBackupPaths.WORKSPACES_DIR).apply { mkdirs() }
+        val targetFile = WorkspaceBackupPaths.resolveRestoreTarget(workspacesRoot, entryName)
+            ?: throw Exception("Invalid workspace file path: $entryName")
+        targetFile.parentFile?.mkdirs()
+
+        try {
+            FileOutputStream(targetFile).use { outputStream ->
+                zipIn.copyTo(outputStream)
+            }
+            Log.i(
+                TAG,
+                "restoreFromBackupFile: Restored workspace file $entryName (${targetFile.length()} bytes)",
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "restoreFromBackupFile: Failed to restore workspace file $entryName", e)
+            throw Exception("Failed to restore workspace file $entryName: ${e.message}")
         }
     }
 

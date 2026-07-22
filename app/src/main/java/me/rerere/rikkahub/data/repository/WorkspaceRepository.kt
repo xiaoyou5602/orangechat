@@ -41,10 +41,8 @@ class WorkspaceRepository(
         for (workspace in workspaces) {
             val dir = manager.workspaceDir(workspace.root)
             if (!dir.exists()) {
-                Log.w(TAG, "Workspace directory missing, removing record: id=${workspace.id}, root=${workspace.root}")
-                dao.deleteById(workspace.id)
-                cleanupAssistantReferences(workspace.id)
-                continue
+                Log.w(TAG, "Workspace directory missing, recreating empty directory: id=${workspace.id}, root=${workspace.root}")
+                manager.ensureWorkspace(workspace.root)
             }
             val statusName = workspace.shellStatus
             if ((statusName == WorkspaceShellStatus.READY.name || statusName == WorkspaceShellStatus.INSTALLING.name)
