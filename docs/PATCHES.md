@@ -9,6 +9,18 @@
 
 ## 已实现
 
+### Rism 外置记忆召回反馈
+
+- 目的：宿主保留最终 top-N 的 `source_message_id`，在记忆真正进入本轮最终模型
+  上下文后给予轻量 heat 反馈，让持续被想起的主题逐渐升温。
+- 行为：`ExternalMemorySummary` 按 `Long` 解析来源 ID；只有没有待续工具调用的最终
+  生成步骤才提交反馈，自动工具续跑与人工批准暂停不会重复累计；同一记忆库内相同来源
+  同轮去重。反馈通过 `AppScope` 异步调用固定 `+0.25` 的专用 RPC，失败只写简短日志，
+  不阻塞聊天、不记录记忆正文；手动重新生成属于新一轮。
+- 验证：来源 ID、固定请求体与同轮去重 3 项针对性单元测试通过，完整 debug APK
+  构建通过；仍待执行线上 RPC schema 并真机验证 heat 变化、失败降级和重新生成语义。
+- commit：`e29238b0 feat: warm recalled Rism memories`。
+
 ### 工作区文件读取护栏
 
 - 目的：避免模型误读超大源码或 Base64 引擎正文，持续污染后续上下文和 token 用量。
@@ -40,15 +52,6 @@
   `76630521 fix: align debug plugins and workspace imports`。
 
 ## 待实现
-
-### Rism 外置记忆召回反馈
-
-- 目标：宿主保留最终 top-N 的 `source_message_id`，成功注入上下文后对源记忆执行
-  同轮去重的轻量 heat 反馈；失败不影响聊天。
-- 宿主范围：`ExternalMemorySummary` 来源字段、`GenerationHandler` 召回结果保留、
-  反馈 RPC、失败降级、门控设置与备份兼容。
-- 主计划：`orangecat-personal-addons/docs/plans/memory-recall.md`。
-- 状态：尚未实现，不等待官方供体先增加回调。
 
 ### 工作区工具护栏后续
 
