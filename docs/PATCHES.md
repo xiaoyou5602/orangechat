@@ -31,13 +31,13 @@
   id/root 并自动补建 Room 记录，目录暂缺时不再删除数据库记录。debug 桌面入口和 SAF
   根目录使用独立名称“橘瓣·护栏测试版”，避免与正式版混淆。
 - 验证：2 项数据库替换测试、1 项插件目录策略测试、1 项插件恢复权限策略测试、
-  3 项工作区备份路径测试、3 项工作区导入登记测试、工作区
-  读取护栏 4 项测试和完整 debug 构建通过；仍待真机验证设置、聊天、上传文件、skills、
-  插件设置和 SAF 工作区迁移；公共插件目录读取及 debug 桌面标签已通过 APK 静态核对，
-  待本次覆盖安装后做真机核对。
+  3 项工作区备份路径测试、3 项工作区导入登记测试、工作区读取护栏 4 项测试和完整
+  debug 构建通过；2026-07-24 已在 `24129PN74C` 覆盖安装并完成真机验收，独立桌面名称、
+  公共插件读取、旧备份恢复及 SAF 工作区对应均确认通过。
 - commits：`544b32c7 fix: restore older backups before Room starts`、
   `29601167 fix: isolate debug plugin restore storage`、
-  `8ff04cf7 fix: preserve workspaces across backup restore`。
+  `8ff04cf7 fix: preserve workspaces across backup restore`、
+  `76630521 fix: align debug plugins and workspace imports`。
 
 ## 待实现
 
