@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkahub.data.sync.WorkspaceImportRegistration
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.workspace.RootfsInstallProgress
 import me.rerere.workspace.RootfsInstaller
@@ -73,6 +74,20 @@ class WorkspaceRepository(
         )
         manager.ensureWorkspace(workspace.root)
         dao.upsert(workspace)
+        return workspace
+    }
+
+    suspend fun registerImportedWorkspace(root: String): WorkspaceEntity {
+        val existing = dao.getAll()
+        val workspace = WorkspaceImportRegistration.resolve(
+            root = root,
+            existing = existing,
+            now = System.currentTimeMillis(),
+        )
+        manager.ensureWorkspace(workspace.root)
+        if (existing.none { it.id == workspace.id }) {
+            dao.upsert(workspace)
+        }
         return workspace
     }
 

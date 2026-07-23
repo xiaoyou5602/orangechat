@@ -17,19 +17,24 @@
 - 验证：4 项针对性单元测试和完整 debug 构建通过；尚未完成真实工作区真机回归。
 - commit：`1efca914 feat: guard workspace file reads`。
 
-### 旧备份冷启动恢复与 debug 后台隔离
+### 旧备份冷启动恢复、工作区迁移与 debug 后台隔离
 
 - 目的：兼容 2.2.2 的 Room v28 备份，避免恢复到 v29 后缺少
   `security_audit_logs`；避免测试包导入生产设置后启动第二套后台自动化或因公共插件
   目录无权限而中止聊天数据库恢复。
 - 行为：数据库先暂存，在 Room 初始化前替换并执行 28→29 migration；恢复任务由
   ViewModel 持有，导出前执行 WAL checkpoint；debug 变体默认关闭后台自动启动项，
-  并将插件恢复到自身应用私有目录，不再读写正式版公共插件目录或要求所有文件访问权限；
-  新备份包含各工作区的用户 `files/`，不包含可重建的 Linux rootfs 和临时目录，旧备份
-  可通过系统文件选择器从另一橘瓣逐个导入工作区，目录暂缺时不再删除数据库记录。
-- 验证：2 项数据库替换测试、2 项插件目录策略测试、3 项工作区备份路径测试、工作区
+  正式版与 debug 版继续共用 `/storage/emulated/0/Orangechat/plugins`，便于并存包自动读取
+  同一套插件；未授予“所有文件访问”时，恢复会跳过插件文件但继续恢复聊天数据库，不再
+  因 `EACCES` 中止。新备份包含各工作区的用户 `files/`，不包含可重建的 Linux rootfs
+  和临时目录；旧正式版工作区可通过系统文件选择器逐个导入，导入时沿用来源 root 作为
+  id/root 并自动补建 Room 记录，目录暂缺时不再删除数据库记录。debug 桌面入口和 SAF
+  根目录使用独立名称“橘瓣·护栏测试版”，避免与正式版混淆。
+- 验证：2 项数据库替换测试、1 项插件目录策略测试、1 项插件恢复权限策略测试、
+  3 项工作区备份路径测试、3 项工作区导入登记测试、工作区
   读取护栏 4 项测试和完整 debug 构建通过；仍待真机验证设置、聊天、上传文件、skills、
-  插件、插件设置和 SAF 工作区迁移。
+  插件设置和 SAF 工作区迁移；公共插件目录读取及 debug 桌面标签已通过 APK 静态核对，
+  待本次覆盖安装后做真机核对。
 - commits：`544b32c7 fix: restore older backups before Room starts`、
   `29601167 fix: isolate debug plugin restore storage`、
   `8ff04cf7 fix: preserve workspaces across backup restore`。

@@ -44,7 +44,7 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
             result.newRow().apply {
                 add(Root.COLUMN_ROOT_ID, workspace.root)
                 add(Root.COLUMN_DOCUMENT_ID, workspace.root)
-                add(Root.COLUMN_TITLE, context.getString(R.string.app_name))
+                add(Root.COLUMN_TITLE, context.getString(R.string.app_variant_name))
                 add(Root.COLUMN_SUMMARY, workspace.name)
                 add(Root.COLUMN_FLAGS, Root.FLAG_SUPPORTS_CREATE or Root.FLAG_SUPPORTS_IS_CHILD)
                 add(Root.COLUMN_ICON, R.mipmap.ic_launcher)

@@ -71,7 +71,6 @@ import me.rerere.hugeicons.stroke.Delete02
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.PlusSign
 import me.rerere.hugeicons.stroke.Reload
-import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.plugin.model.PluginFolder
 import me.rerere.rikkahub.plugin.model.PluginInfo
@@ -638,9 +637,7 @@ private fun RenameFolderDialog(
 }
 
 private fun checkStoragePermission(): Boolean {
-    return if (BuildConfig.DEBUG) {
-        true
-    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         Environment.isExternalStorageManager()
     } else {
         true

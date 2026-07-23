@@ -90,7 +90,10 @@ fun ImportExportTab(
         when (val state = workspaceImportState) {
             is UiState.Success -> {
                 toaster.show(
-                    "工作区已导入 ${state.data.importedFiles} 个文件",
+                    buildString {
+                        append("工作区已导入 ${state.data.importedFiles} 个文件")
+                        state.data.workspaceName?.let { append("，已对应到“$it”") }
+                    },
                     type = ToastType.Success,
                 )
                 vm.clearWorkspaceImportState()

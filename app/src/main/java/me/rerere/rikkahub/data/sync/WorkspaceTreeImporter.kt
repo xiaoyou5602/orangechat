@@ -143,4 +143,5 @@ internal object WorkspaceTreeImporter {
 data class WorkspaceImportResult(
     val root: String,
     val importedFiles: Int,
+    val workspaceName: String? = null,
 )

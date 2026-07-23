@@ -10,7 +10,6 @@ import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import kotlinx.serialization.json.Json
-import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.security.SecurityAuditRepository
 import me.rerere.rikkahub.plugin.model.PluginInfo
 import me.rerere.rikkahub.plugin.model.PluginManifest
@@ -39,14 +38,13 @@ class PluginScanner(
     /**
      * 获取插件根目录。
      *
-     * 正式包沿用公共目录 /storage/emulated/0/Orangechat/plugins/，保持现有插件兼容；
-     * debug 测试包使用应用私有目录，避免依赖“所有文件访问”权限，也避免读写正式包的插件。
+     * 正式包和 debug 测试包都沿用公共目录
+     * /storage/emulated/0/Orangechat/plugins/，让并存安装的两个包读取同一套插件。
+     * Android 11+ 需要先授予“所有文件访问”权限。
      */
     val pluginsDir: File
         get() = PluginStoragePaths.resolve(
-            appFilesDir = context.filesDir,
             sharedStorageRoot = Environment.getExternalStorageDirectory(),
-            useIsolatedStorage = BuildConfig.DEBUG,
         ).apply { mkdirs() }
 
     /**

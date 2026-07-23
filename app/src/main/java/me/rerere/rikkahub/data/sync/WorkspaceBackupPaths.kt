@@ -15,11 +15,13 @@ internal object WorkspaceBackupPaths {
 
     private val rootPattern = Regex("[A-Za-z0-9._-]+")
 
+    fun isValidRoot(root: String): Boolean = root.matches(rootPattern)
+
     fun userFilesDirectories(workspacesRoot: File): List<File> {
         return workspacesRoot.listFiles()
             ?.filter { workspaceDir ->
                 workspaceDir.isDirectory &&
-                    workspaceDir.name.matches(rootPattern) &&
+                    isValidRoot(workspaceDir.name) &&
                     File(workspaceDir, FILES_DIR).isDirectory
             }
             ?.map { File(it, FILES_DIR) }
@@ -32,7 +34,7 @@ internal object WorkspaceBackupPaths {
         val relative = entryName.removePrefix(ENTRY_PREFIX)
         val root = relative.substringBefore('/', missingDelimiterValue = "")
         val afterRoot = relative.substringAfter('/', missingDelimiterValue = "")
-        if (!root.matches(rootPattern) || !afterRoot.startsWith("$FILES_DIR/")) return null
+        if (!isValidRoot(root) || !afterRoot.startsWith("$FILES_DIR/")) return null
 
         val fileRelativePath = afterRoot.removePrefix("$FILES_DIR/")
         if (fileRelativePath.isBlank()) return null
@@ -45,7 +47,7 @@ internal object WorkspaceBackupPaths {
     }
 
     fun resolveImportedFilesDirectory(workspacesRoot: File, root: String): File? {
-        if (!root.matches(rootPattern)) return null
+        if (!isValidRoot(root)) return null
         val canonicalWorkspaces = workspacesRoot.canonicalFile
         val filesDir = File(File(canonicalWorkspaces, root), FILES_DIR).canonicalFile
         return filesDir.takeIf {

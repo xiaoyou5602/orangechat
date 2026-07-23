@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.data.sync.importer.ChatboxImporter
 import me.rerere.rikkahub.data.sync.importer.CherryStudioProviderImporter
 import me.rerere.rikkahub.data.sync.webdav.WebDavBackupItem
@@ -39,6 +40,7 @@ class BackupVM(
     private val webDavSync: WebDavSync,
     private val s3Sync: S3Sync,
     private val conversationRepository: ConversationRepository,
+    private val workspaceRepository: WorkspaceRepository,
 ) : ViewModel() {
     val settings = settingsStore.settingsFlow.stateIn(
         scope = viewModelScope,
@@ -133,7 +135,9 @@ class BackupVM(
         viewModelScope.launch {
             workspaceImportState.emit(UiState.Loading)
             runCatching {
-                WorkspaceTreeImporter.import(context.applicationContext, uri)
+                val result = WorkspaceTreeImporter.import(context.applicationContext, uri)
+                val workspace = workspaceRepository.registerImportedWorkspace(result.root)
+                result.copy(workspaceName = workspace.name)
             }.fold(
                 onSuccess = { workspaceImportState.emit(UiState.Success(it)) },
                 onFailure = { workspaceImportState.emit(UiState.Error(it)) },

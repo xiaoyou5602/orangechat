@@ -9,17 +9,7 @@ package me.rerere.rikkahub.plugin.scanner
 import java.io.File
 
 internal object PluginStoragePaths {
-    private const val ISOLATED_PLUGINS_DIR = "plugins"
-
     fun resolve(
-        appFilesDir: File,
         sharedStorageRoot: File,
-        useIsolatedStorage: Boolean,
-    ): File {
-        return if (useIsolatedStorage) {
-            File(appFilesDir, ISOLATED_PLUGINS_DIR)
-        } else {
-            File(sharedStorageRoot, PluginScanner.PLUGINS_DIR)
-        }
-    }
+    ): File = File(sharedStorageRoot, PluginScanner.PLUGINS_DIR)
 }

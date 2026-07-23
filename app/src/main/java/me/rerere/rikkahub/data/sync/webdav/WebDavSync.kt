@@ -7,6 +7,8 @@
 package me.rerere.rikkahub.data.sync.webdav
 
 import android.content.Context
+import android.os.Build
+import android.os.Environment
 import android.util.Log
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +22,7 @@ import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.migration.SettingsJsonMigrator
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.sync.PendingDatabaseRestore
+import me.rerere.rikkahub.data.sync.PluginRestorePolicy
 import me.rerere.rikkahub.data.sync.WorkspaceBackupPaths
 import me.rerere.rikkahub.plugin.repository.PluginRepository
 import me.rerere.rikkahub.plugin.repository.PluginSettingsExport
@@ -275,6 +278,19 @@ class WebDavSync(
         Log.i(TAG, "restoreFromBackupFile: Starting restore from ${backupFile.absolutePath}")
 
         val restoreDatabase = config.items.contains(WebDavConfig.BackupItem.DATABASE)
+        val canWriteSharedPluginStorage =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+        val restorePluginFiles = PluginRestorePolicy.shouldRestoreFiles(
+            includePlugins = includePlugins,
+            filesSelected = config.items.contains(WebDavConfig.BackupItem.FILES),
+            canWriteSharedStorage = canWriteSharedPluginStorage,
+        )
+        if (includePlugins && !restorePluginFiles) {
+            Log.w(
+                TAG,
+                "restoreFromBackupFile: Skipping plugin files because shared storage access is not granted",
+            )
+        }
         val databaseStagingDir = if (restoreDatabase) {
             PendingDatabaseRestore.createStagingDir(context)
         } else {
@@ -368,8 +384,7 @@ class WebDavSync(
                                 } catch (e: Exception) {
                                     Log.e(TAG, "restoreFromBackupFile: Failed to restore plugin settings", e)
                                 }
-                            } else if (includePlugins &&
-                                config.items.contains(WebDavConfig.BackupItem.FILES) &&
+                            } else if (restorePluginFiles &&
                                 zipEntry.name.startsWith("${PluginScanner.PLUGINS_DIR}/")
                             ) {
                                 restorePluginEntry(zipIn, zipEntry.name)
