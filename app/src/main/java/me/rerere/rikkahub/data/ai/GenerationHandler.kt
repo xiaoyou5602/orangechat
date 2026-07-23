@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.datetime.TimeZone
@@ -44,6 +45,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
+import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
@@ -58,8 +60,10 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.data.model.ExternalMemory
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.service.ExternalMemoryService
 import me.rerere.rikkahub.utils.applyPlaceholders
 import java.util.Locale
 import kotlin.time.Clock
@@ -72,7 +76,30 @@ private const val TAG = "GenerationHandler"
 // animateContentSize 的尺寸补间动画被不断打断重启），表现为打字机效果的"抖动/掉帧"。
 // 这里把推送频率限制在这个间隔以内，肉眼完全感知不到延迟，但能大幅降低重组频率。
 private const val STREAM_UI_THROTTLE_MS = 50L
- 
+
+internal data class RecalledExternalMemory(
+    val content: String,
+    val config: ExternalMemory,
+    val sourceMessageId: Long? = null,
+)
+
+internal data class RecallBoostTarget(
+    val config: ExternalMemory,
+    val sourceMessageId: Long,
+)
+
+internal fun recallBoostTargets(
+    recalled: List<RecalledExternalMemory>,
+): List<RecallBoostTarget> = recalled.mapNotNull { memory ->
+    memory.sourceMessageId?.let { sourceMessageId ->
+        RecallBoostTarget(
+            config = memory.config,
+            sourceMessageId = sourceMessageId,
+        )
+    }
+}.distinctBy { target ->
+    target.config.id to target.sourceMessageId
+}
 @Serializable
 sealed interface GenerationChunk {
     data class Messages(
@@ -88,6 +115,7 @@ class GenerationHandler(
     private val conversationRepo: ConversationRepository,
     private val aiLoggingManager: AILoggingManager,
     private val memoryBankService: MemoryBankService,
+    private val appScope: AppScope,
 ) {
     fun generateText(
         settings: Settings,
@@ -148,7 +176,7 @@ class GenerationHandler(
  
             // Skip generation if we have approved/denied tool calls to handle
             if (pendingTools.isEmpty()) {
-                generateInternal(
+                val recalledForFeedback = generateInternal(
                     assistant = assistant,
                     settings = settings,
                     messages = messages,
@@ -206,6 +234,10 @@ class GenerationHandler(
  
                 val tools = messages.last().getTools().filter { !it.isExecuted }
                 if (tools.isEmpty()) {
+                    scheduleRecallBoosts(
+                        assistantId = assistant.id.toString(),
+                        targets = recalledForFeedback,
+                    )
                     // no tool calls, break
                     break
                 }
@@ -379,7 +411,8 @@ class GenerationHandler(
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
         conversationSystemPrompt: String? = null,
         workspaceCwd: String? = null,
-    ) {
+    ): List<RecallBoostTarget> {
+        val recalledForFeedback = mutableListOf<RecalledExternalMemory>()
         val internalMessages = buildList {
             val system = buildString {
                 val effectiveSystemPrompt =
@@ -415,8 +448,8 @@ class GenerationHandler(
                                 async {
                                     withTimeoutOrNull(8.seconds) {
                                         runCatching {
-                                            val service = me.rerere.rikkahub.data.service.ExternalMemoryService(config)
-                                            val recalled = mutableListOf<String>()
+                                            val service = ExternalMemoryService(config)
+                                            val recalled = mutableListOf<RecalledExternalMemory>()
 
                             // 如果配置了向量模型且开启了日记摘要，使用向量召回日记摘要
                             if (config.embeddingModelId != null && queryText.isNotBlank() && config.autoSaveDiarySummary) {
@@ -440,7 +473,13 @@ class GenerationHandler(
                                                                 count = config.recallCount,
                                                             ).getOrDefault(emptyList())
                                                             recalledSummaries.forEach { summary ->
-                                                                recalled.add(summary.content)
+                                                                recalled.add(
+                                                                    RecalledExternalMemory(
+                                                                        content = summary.content,
+                                                                        config = config,
+                                                                        sourceMessageId = summary.sourceMessageId,
+                                                                    )
+                                                                )
                                                             }
                                                             Log.d(TAG, "Vector recall ${recalledSummaries.size} summaries from ${config.name}")
                                                         }
@@ -466,7 +505,12 @@ class GenerationHandler(
                                                         "user" -> "用户"
                                                         else -> msg.role
                                                     }
-                                                    recalled.add("[$prefix] ${msg.content}")
+                                                    recalled.add(
+                                                        RecalledExternalMemory(
+                                                            content = "[$prefix] ${msg.content}",
+                                                            config = config,
+                                                        )
+                                                    )
                                                 }
                                             }
                                             recalled
@@ -486,8 +530,9 @@ class GenerationHandler(
                             appendLine()
                             appendLine("## 外置记忆库")
                             allRecalled.reversed().forEachIndexed { index, memory ->
-                                appendLine("${index + 1}. ${memory}")
+                                appendLine("${index + 1}. ${memory.content}")
                             }
+                            recalledForFeedback.addAll(allRecalled)
                         }
                     }
                 } catch (e: Exception) {
@@ -633,6 +678,29 @@ class GenerationHandler(
             }
             onUpdateMessages(messages)
         }
+        return recallBoostTargets(recalledForFeedback)
+    }
+
+    private fun scheduleRecallBoosts(
+        assistantId: String,
+        targets: List<RecallBoostTarget>,
+    ) {
+        targets.forEach { target ->
+            appScope.launch(Dispatchers.IO) {
+                ExternalMemoryService(target.config)
+                    .boostRecalledMemoryHeat(
+                        assistantId = assistantId,
+                        sourceMessageId = target.sourceMessageId,
+                    )
+                    .onFailure { error ->
+                        Log.w(
+                            TAG,
+                            "Recall heat feedback failed for ${target.config.name} " +
+                                "source=${target.sourceMessageId}: ${error.message}",
+                        )
+                    }
+            }
+        }
     }
  
     fun translateText(
@@ -753,4 +821,3 @@ private fun buildCodeBlockPrompt(): String = buildString {
     appendLine("   - The `edits` mode applies search/replace to the files from your previous `write_files` call. Files not mentioned in `edits` keep their content unchanged.")
     appendLine("   - Always use actual filenames (e.g. `MainActivity.kt`) as code block language tags, not just language names (e.g. `kotlin`).")
 }
- 

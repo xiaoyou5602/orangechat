@@ -9,9 +9,14 @@ package me.rerere.rikkahub.data.service
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import me.rerere.rikkahub.data.model.ExternalMemory
 import org.json.JSONArray
 import java.net.HttpURLConnection
@@ -27,9 +32,8 @@ class ExternalMemoryService(
 ) {
     companion object {
         private const val TAG = "ExternalMemoryService"
+        private const val RECALL_BOOST_RPC = "boost_recalled_memory_heat"
     }
-
-    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 
     /**
      * 保存聊天消息到外置记忆库
@@ -420,6 +424,52 @@ class ExternalMemoryService(
         }
     }
 
+    /**
+     * 对已经进入本轮最终模型上下文的向量记忆执行固定 +0.25 升温。
+     * RPC 自身固定增量，宿主不传 amount；失败由调用方降级处理。
+     */
+    suspend fun boostRecalledMemoryHeat(
+        assistantId: String,
+        sourceMessageId: Long,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = config.supabaseUrl.trimEnd('/')
+            val endpoint = URL("$url/rest/v1/rpc/$RECALL_BOOST_RPC")
+            val body = buildRecallBoostRequest(assistantId, sourceMessageId)
+
+            val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("apikey", config.supabaseKey)
+                setRequestProperty("Authorization", "Bearer ${config.supabaseKey}")
+                doOutput = true
+                connectTimeout = 5000
+                readTimeout = 5000
+            }
+
+            connection.outputStream.bufferedWriter().use { writer ->
+                writer.write(body)
+                writer.flush()
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                throw Exception("Supabase recall boost failed ($responseCode)")
+            }
+
+            val responseBody = connection.inputStream.bufferedReader().use { it.readText() }
+            val accepted = runCatching {
+                SUMMARY_JSON.parseToJsonElement(responseBody)
+                    .jsonObject["success"]
+                    ?.jsonPrimitive
+                    ?.booleanOrNull
+            }.getOrNull()
+            if (accepted == false) {
+                throw Exception("Supabase recall boost rejected")
+            }
+        }.map { }
+    }
+
     private fun cosineSimilarity(a: List<Float>, b: List<Float>): Float {
         if (a.size != b.size || a.isEmpty()) return 0f
         var dot = 0f
@@ -456,32 +506,40 @@ class ExternalMemoryService(
         return result
     }
 
-    private fun parseSummaries(jsonText: String): List<ExternalMemorySummary> {
-        val result = mutableListOf<ExternalMemorySummary>()
+    internal fun parseSummaries(jsonText: String): List<ExternalMemorySummary> {
         try {
-            val array = JSONArray(jsonText)
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                val embeddingStr = obj.optString("embedding", "")
+            return SUMMARY_JSON.parseToJsonElement(jsonText).jsonArray.map { element ->
+                val obj = element.jsonObject
+                val embeddingStr = obj["embedding"]?.jsonPrimitive?.contentOrNull.orEmpty()
                 val embedding = if (embeddingStr.isNotBlank() && embeddingStr.startsWith("[")) {
                     embeddingStr.trim('[', ']').split(",").mapNotNull { it.trim().toFloatOrNull() }
                 } else emptyList()
-                result.add(
-                    ExternalMemorySummary(
-                        id = obj.optInt("id", 0),
-                        assistantId = obj.optString("assistant_id", ""),
-                        content = obj.optString("content", ""),
-                        createdAt = obj.optString("created_at", ""),
-                        embedding = embedding,
-                    )
+
+                ExternalMemorySummary(
+                    id = obj["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                    assistantId = obj["assistant_id"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    content = obj["content"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    createdAt = obj["created_at"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    embedding = embedding,
+                    sourceMessageId = obj["source_message_id"]?.jsonPrimitive?.longOrNull,
                 )
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse summaries", e)
+            return emptyList()
         }
-        return result
     }
 }
+
+private val SUMMARY_JSON = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+internal fun buildRecallBoostRequest(
+    assistantId: String,
+    sourceMessageId: Long,
+): String = buildJsonObject {
+    put("p_assistant_id", JsonPrimitive(assistantId))
+    put("p_mem_id", JsonPrimitive(sourceMessageId))
+}.toString()
 
 data class ExternalMemoryMessage(
     val id: Int = 0,
@@ -493,9 +551,10 @@ data class ExternalMemoryMessage(
 )
 
 data class ExternalMemorySummary(
-    val id: Int = 0,
+    val id: Long = 0,
     val assistantId: String = "",
     val content: String = "",
     val createdAt: String = "",
     val embedding: List<Float> = emptyList(),
+    val sourceMessageId: Long? = null,
 )
