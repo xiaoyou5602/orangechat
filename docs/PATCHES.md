@@ -20,7 +20,8 @@
 - 验证：来源 ID、固定请求体与同轮去重 3 项针对性单元测试通过，完整 debug APK
   构建通过；2026-07-24 线上 RPC schema 已执行并验证固定 `+0.25`、Assistant 隔离
   和测试 heat 恢复，同日已覆盖安装到 `24129PN74C` 的
-  `me.rerere.orangechat.debug` 并正常启动；仍待真机验证聊天链路、失败降级和重新生成语义。
+  `me.rerere.orangechat.debug` 并正常启动；真实聊天已完成向量读取并对 5 条 top-N
+  记忆各发出一次成功反馈。仍待真机验证失败降级和手动重新生成语义。
 - commit：`e29238b0 feat: warm recalled Rism memories`。
 
 ### 工作区文件读取护栏
